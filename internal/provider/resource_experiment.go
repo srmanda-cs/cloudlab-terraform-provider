@@ -2,6 +2,7 @@ package provider
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -33,16 +34,32 @@ type experimentResourceModel struct {
 	ID             types.String `tfsdk:"id"`
 	Name           types.String `tfsdk:"name"`
 	Project        types.String `tfsdk:"project"`
+	Group          types.String `tfsdk:"group"`
 	ProfileName    types.String `tfsdk:"profile_name"`
 	ProfileProject types.String `tfsdk:"profile_project"`
 	Duration       types.Int64  `tfsdk:"duration"`
 	StartAt        types.String `tfsdk:"start_at"`
 	StopAt         types.String `tfsdk:"stop_at"`
-	Creator        types.String `tfsdk:"creator"`
-	Status         types.String `tfsdk:"status"`
-	CreatedAt      types.String `tfsdk:"created_at"`
-	ExpiresAt      types.String `tfsdk:"expires_at"`
+	ParamsetName   types.String `tfsdk:"paramset_name"`
+	ParamsetOwner  types.String `tfsdk:"paramset_owner"`
+	Bindings       types.String `tfsdk:"bindings"`
+	Refspec        types.String `tfsdk:"refspec"`
+	SSHPubKey      types.String `tfsdk:"sshpubkey"`
 	WaitForReady   types.Bool   `tfsdk:"wait_for_ready"`
+	// Extension fields (mutable via Update)
+	ExpiresAt    types.String `tfsdk:"expires_at"`
+	ExtendReason types.String `tfsdk:"extend_reason"`
+	// Computed read-only fields
+	Creator           types.String `tfsdk:"creator"`
+	Updater           types.String `tfsdk:"updater"`
+	Status            types.String `tfsdk:"status"`
+	CreatedAt         types.String `tfsdk:"created_at"`
+	StartedAt         types.String `tfsdk:"started_at"`
+	URL               types.String `tfsdk:"url"`
+	WBStoreID         types.String `tfsdk:"wbstore_id"`
+	RepositoryURL     types.String `tfsdk:"repository_url"`
+	RepositoryRefspec types.String `tfsdk:"repository_refspec"`
+	RepositoryHash    types.String `tfsdk:"repository_hash"`
 }
 
 // Metadata returns the resource type name.
@@ -74,6 +91,13 @@ func (r *experimentResource) Schema(_ context.Context, _ resource.SchemaRequest,
 			"project": schema.StringAttribute{
 				Description: "The CloudLab project to instantiate the experiment in.",
 				Required:    true,
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.RequiresReplace(),
+				},
+			},
+			"group": schema.StringAttribute{
+				Description: "The project subgroup to instantiate the experiment in.",
+				Optional:    true,
 				PlanModifiers: []planmodifier.String{
 					stringplanmodifier.RequiresReplace(),
 				},
@@ -113,6 +137,38 @@ func (r *experimentResource) Schema(_ context.Context, _ resource.SchemaRequest,
 					stringplanmodifier.RequiresReplace(),
 				},
 			},
+			"paramset_name": schema.StringAttribute{
+				Description: "Optional name of a parameter set to apply to the profile.",
+				Optional:    true,
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.RequiresReplace(),
+				},
+			},
+			"paramset_owner": schema.StringAttribute{
+				Description: "The owner of the parameter set.",
+				Optional:    true,
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.RequiresReplace(),
+				},
+			},
+			"bindings": schema.StringAttribute{
+				Description: "Optional JSON string of parameter bindings to apply to the profile.",
+				Optional:    true,
+			},
+			"refspec": schema.StringAttribute{
+				Description: "For repository-based profiles, optionally specify a refspec[:hash] to use instead of HEAD.",
+				Optional:    true,
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.RequiresReplace(),
+				},
+			},
+			"sshpubkey": schema.StringAttribute{
+				Description: "Additional SSH public key to install in the experiment.",
+				Optional:    true,
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.RequiresReplace(),
+				},
+			},
 			"wait_for_ready": schema.BoolAttribute{
 				Description: "If true (default), Terraform will wait until the experiment reaches 'ready' status " +
 					"before completing. Set to false to return immediately after creation is submitted.",
@@ -122,12 +178,28 @@ func (r *experimentResource) Schema(_ context.Context, _ resource.SchemaRequest,
 					boolplanmodifier.UseStateForUnknown(),
 				},
 			},
+			// Mutable extension attributes
+			"expires_at": schema.StringAttribute{
+				Description: "The timestamp when the experiment is scheduled to expire. " +
+					"Can be updated to extend the experiment lifetime.",
+				Optional: true,
+				Computed: true,
+			},
+			"extend_reason": schema.StringAttribute{
+				Description: "Reason provided when extending the experiment lifetime.",
+				Optional:    true,
+			},
+			// Computed read-only attributes
 			"creator": schema.StringAttribute{
 				Description: "The CloudLab username who created the experiment.",
 				Computed:    true,
 				PlanModifiers: []planmodifier.String{
 					stringplanmodifier.UseStateForUnknown(),
 				},
+			},
+			"updater": schema.StringAttribute{
+				Description: "The CloudLab username who last updated the experiment.",
+				Computed:    true,
 			},
 			"status": schema.StringAttribute{
 				Description: "The current status of the experiment (e.g., created, ready, failed).",
@@ -140,8 +212,34 @@ func (r *experimentResource) Schema(_ context.Context, _ resource.SchemaRequest,
 					stringplanmodifier.UseStateForUnknown(),
 				},
 			},
-			"expires_at": schema.StringAttribute{
-				Description: "The timestamp when the experiment is scheduled to expire.",
+			"started_at": schema.StringAttribute{
+				Description: "The timestamp when the experiment was actually started.",
+				Computed:    true,
+			},
+			"url": schema.StringAttribute{
+				Description: "The URL of the Portal status page for the experiment.",
+				Computed:    true,
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.UseStateForUnknown(),
+				},
+			},
+			"wbstore_id": schema.StringAttribute{
+				Description: "The ID of the experiment's WB store.",
+				Computed:    true,
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.UseStateForUnknown(),
+				},
+			},
+			"repository_url": schema.StringAttribute{
+				Description: "The URL of the repository (for repository-backed profiles).",
+				Computed:    true,
+			},
+			"repository_refspec": schema.StringAttribute{
+				Description: "The refspec of the experiment (for repository-backed profiles).",
+				Computed:    true,
+			},
+			"repository_hash": schema.StringAttribute{
+				Description: "The commit hash of the experiment (for repository-backed profiles).",
 				Computed:    true,
 			},
 		},
@@ -182,6 +280,9 @@ func (r *experimentResource) Create(ctx context.Context, req resource.CreateRequ
 		ProfileProject: plan.ProfileProject.ValueString(),
 	}
 
+	if !plan.Group.IsNull() && !plan.Group.IsUnknown() {
+		createReq.Group = plan.Group.ValueString()
+	}
 	if !plan.Duration.IsNull() && !plan.Duration.IsUnknown() {
 		v := plan.Duration.ValueInt64()
 		createReq.Duration = &v
@@ -193,6 +294,30 @@ func (r *experimentResource) Create(ctx context.Context, req resource.CreateRequ
 	if !plan.StopAt.IsNull() && !plan.StopAt.IsUnknown() {
 		v := plan.StopAt.ValueString()
 		createReq.StopAt = &v
+	}
+	if !plan.ParamsetName.IsNull() && !plan.ParamsetName.IsUnknown() {
+		v := plan.ParamsetName.ValueString()
+		createReq.ParamsetName = &v
+	}
+	if !plan.ParamsetOwner.IsNull() && !plan.ParamsetOwner.IsUnknown() {
+		v := plan.ParamsetOwner.ValueString()
+		createReq.ParamsetOwner = &v
+	}
+	if !plan.Bindings.IsNull() && !plan.Bindings.IsUnknown() {
+		var bindings map[string]any
+		if err := json.Unmarshal([]byte(plan.Bindings.ValueString()), &bindings); err != nil {
+			resp.Diagnostics.AddError("Invalid Bindings JSON", fmt.Sprintf("Failed to parse bindings JSON: %s", err))
+			return
+		}
+		createReq.Bindings = bindings
+	}
+	if !plan.Refspec.IsNull() && !plan.Refspec.IsUnknown() {
+		v := plan.Refspec.ValueString()
+		createReq.Refspec = &v
+	}
+	if !plan.SSHPubKey.IsNull() && !plan.SSHPubKey.IsUnknown() {
+		v := plan.SSHPubKey.ValueString()
+		createReq.SSHPubKey = &v
 	}
 
 	tflog.Info(ctx, "Creating CloudLab experiment", map[string]any{
@@ -252,13 +377,71 @@ func (r *experimentResource) Read(ctx context.Context, req resource.ReadRequest,
 	resp.Diagnostics.Append(diags...)
 }
 
-// Update updates the resource. Experiments are immutable after creation;
-// all changes require a replace (handled by RequiresReplace plan modifiers).
-func (r *experimentResource) Update(_ context.Context, _ resource.UpdateRequest, resp *resource.UpdateResponse) {
-	resp.Diagnostics.AddError(
-		"Update Not Supported",
-		"CloudLab experiments cannot be updated in-place. All configuration changes require a new experiment.",
-	)
+// Update handles mutable changes: extending experiment lifetime and modifying bindings.
+func (r *experimentResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
+	var plan, state experimentResourceModel
+
+	diags := req.Plan.Get(ctx, &plan)
+	resp.Diagnostics.Append(diags...)
+	diags = req.State.Get(ctx, &state)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	experimentID := state.ID.ValueString()
+	var exp *ExperimentResponse
+	var err error
+
+	// Handle extension (expires_at changed)
+	if !plan.ExpiresAt.Equal(state.ExpiresAt) {
+		extReq := &ExperimentExtendRequest{}
+		if !plan.ExpiresAt.IsNull() && !plan.ExpiresAt.IsUnknown() {
+			v := plan.ExpiresAt.ValueString()
+			extReq.ExpiresAt = &v
+		}
+		if !plan.ExtendReason.IsNull() && !plan.ExtendReason.IsUnknown() {
+			v := plan.ExtendReason.ValueString()
+			extReq.Reason = &v
+		}
+		tflog.Info(ctx, "Extending CloudLab experiment", map[string]any{"id": experimentID})
+		exp, err = r.client.ExtendExperiment(experimentID, extReq)
+		if err != nil {
+			resp.Diagnostics.AddError("Error Extending Experiment", err.Error())
+			return
+		}
+	}
+
+	// Handle bindings modification
+	if !plan.Bindings.Equal(state.Bindings) {
+		var bindings map[string]any
+		if !plan.Bindings.IsNull() && !plan.Bindings.IsUnknown() {
+			if jsonErr := json.Unmarshal([]byte(plan.Bindings.ValueString()), &bindings); jsonErr != nil {
+				resp.Diagnostics.AddError("Invalid Bindings JSON", fmt.Sprintf("Failed to parse bindings JSON: %s", jsonErr))
+				return
+			}
+		}
+		modReq := &ExperimentModifyRequest{Bindings: bindings}
+		tflog.Info(ctx, "Modifying CloudLab experiment bindings", map[string]any{"id": experimentID})
+		exp, err = r.client.ModifyExperiment(experimentID, modReq)
+		if err != nil {
+			resp.Diagnostics.AddError("Error Modifying Experiment", err.Error())
+			return
+		}
+	}
+
+	// If no API call was made, refresh state
+	if exp == nil {
+		exp, err = r.client.GetExperiment(experimentID)
+		if err != nil {
+			resp.Diagnostics.AddError("Error Reading Experiment", err.Error())
+			return
+		}
+	}
+
+	plan = mapExperimentResponseToModel(exp, plan)
+	diags = resp.State.Set(ctx, plan)
+	resp.Diagnostics.Append(diags...)
 }
 
 // Delete terminates the experiment.
@@ -293,11 +476,49 @@ func mapExperimentResponseToModel(exp *ExperimentResponse, model experimentResou
 	model.Creator = types.StringValue(exp.Creator)
 	model.Status = types.StringValue(exp.Status)
 	model.CreatedAt = types.StringValue(exp.CreatedAt)
+	model.URL = types.StringValue(exp.URL)
+	model.WBStoreID = types.StringValue(exp.WBStoreID)
+
+	if exp.Group != "" {
+		model.Group = types.StringValue(exp.Group)
+	} else if model.Group.IsUnknown() {
+		model.Group = types.StringNull()
+	}
+
+	if exp.Updater != nil {
+		model.Updater = types.StringValue(*exp.Updater)
+	} else {
+		model.Updater = types.StringNull()
+	}
+
+	if exp.StartedAt != nil {
+		model.StartedAt = types.StringValue(*exp.StartedAt)
+	} else {
+		model.StartedAt = types.StringNull()
+	}
 
 	if exp.ExpiresAt != nil {
 		model.ExpiresAt = types.StringValue(*exp.ExpiresAt)
 	} else {
 		model.ExpiresAt = types.StringNull()
+	}
+
+	if exp.RepositoryURL != nil {
+		model.RepositoryURL = types.StringValue(*exp.RepositoryURL)
+	} else {
+		model.RepositoryURL = types.StringNull()
+	}
+
+	if exp.RepositoryRefspec != nil {
+		model.RepositoryRefspec = types.StringValue(*exp.RepositoryRefspec)
+	} else {
+		model.RepositoryRefspec = types.StringNull()
+	}
+
+	if exp.RepositoryHash != nil {
+		model.RepositoryHash = types.StringValue(*exp.RepositoryHash)
+	} else {
+		model.RepositoryHash = types.StringNull()
 	}
 
 	if model.WaitForReady.IsNull() || model.WaitForReady.IsUnknown() {
