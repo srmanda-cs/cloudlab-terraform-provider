@@ -5,8 +5,8 @@ resource "cloudlab_resgroup" "hw_reservation" {
 
   node_types = [
     {
+      urn       = "urn:publicid:IDN+utah.cloudlab.us+authority+cm"
       node_type = "xl170"
-      aggregate = "utah.cloudlab.us"
       count     = 4
     }
   ]
