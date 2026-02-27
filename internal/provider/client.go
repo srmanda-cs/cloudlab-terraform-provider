@@ -5,8 +5,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"time"
 )
@@ -361,15 +363,63 @@ func (e *APIError) Error() string {
 // HTTP helpers
 // ---------------------------------------------------------------------------
 
+// retryDelays defines the wait durations between successive retry attempts.
+// Three attempts total: initial + two retries with exponential back-off (1 s, 2 s).
+var retryDelays = []time.Duration{1 * time.Second, 2 * time.Second}
+
+// isRetryable reports whether err warrants a retry.
+// Only two categories are retried:
+//   - HTTP 429 Too Many Requests — the server explicitly asked us to back off.
+//   - net.Error (connection refused, DNS failure, transport-level timeout) — the
+//     request never reached the server, so retrying is safe regardless of method.
+func isRetryable(err error) bool {
+	if err == nil {
+		return false
+	}
+	var apiErr *APIError
+	if errors.As(err, &apiErr) {
+		return apiErr.StatusCode == http.StatusTooManyRequests
+	}
+	var netErr net.Error
+	return errors.As(err, &netErr)
+}
+
 func (c *Client) doRequest(ctx context.Context, method, path string, body any) ([]byte, error) {
 	var bodyBytes []byte
-	var reqBody io.Reader
 	if body != nil {
 		data, err := json.Marshal(body)
 		if err != nil {
 			return nil, fmt.Errorf("failed to marshal request body: %w", err)
 		}
 		bodyBytes = data
+	}
+
+	var lastErr error
+	for attempt := 0; attempt <= len(retryDelays); attempt++ {
+		if attempt > 0 {
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(retryDelays[attempt-1]):
+			}
+		}
+
+		respBody, err := c.doOnce(ctx, method, path, bodyBytes)
+		if err == nil {
+			return respBody, nil
+		}
+		lastErr = err
+		if !isRetryable(err) {
+			return nil, err
+		}
+	}
+	return nil, lastErr
+}
+
+// doOnce performs a single HTTP request without retry logic.
+func (c *Client) doOnce(ctx context.Context, method, path string, bodyBytes []byte) ([]byte, error) {
+	var reqBody io.Reader
+	if bodyBytes != nil {
 		reqBody = bytes.NewReader(bodyBytes)
 	}
 
