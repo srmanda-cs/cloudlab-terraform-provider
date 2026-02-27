@@ -243,8 +243,12 @@ func (r *snapshotResource) Update(_ context.Context, _ resource.UpdateRequest, r
 // Note: The CloudLab API does not provide a delete endpoint for snapshots/images through this path.
 // The created image persists in CloudLab even after the Terraform resource is destroyed.
 func (r *snapshotResource) Delete(_ context.Context, _ resource.DeleteRequest, resp *resource.DeleteResponse) {
-	// Snapshot images are not deleted via the API snapshot endpoint.
-	// They persist in CloudLab. This resource is removed from state only.
+	resp.Diagnostics.AddWarning(
+		"Snapshot Image Not Deleted",
+		"Destroying this resource removes it from Terraform state only. "+
+			"The disk image created by this snapshot continues to exist in CloudLab "+
+			"and must be deleted manually through the CloudLab portal.",
+	)
 }
 
 // ImportState implements resource.ResourceWithImportState.
