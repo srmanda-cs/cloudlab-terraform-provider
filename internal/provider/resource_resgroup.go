@@ -288,7 +288,7 @@ func (r *resgroupResource) Create(ctx context.Context, req resource.CreateReques
 		"project": createReq.Project,
 	})
 
-	rg, err := r.client.CreateResgroup(createReq, durationHours)
+	rg, err := r.client.CreateResgroup(ctx, createReq, durationHours)
 	if err != nil {
 		resp.Diagnostics.AddError("Error Creating Reservation Group", err.Error())
 		return
@@ -309,7 +309,7 @@ func (r *resgroupResource) Read(ctx context.Context, req resource.ReadRequest, r
 		return
 	}
 
-	rg, err := r.client.GetResgroup(state.ID.ValueString())
+	rg, err := r.client.GetResgroup(ctx, state.ID.ValueString())
 	if err != nil {
 		var apiErr *APIError
 		if errors.As(err, &apiErr) && apiErr.StatusCode == 404 {
@@ -348,7 +348,7 @@ func (r *resgroupResource) Update(ctx context.Context, req resource.UpdateReques
 	}
 
 	tflog.Info(ctx, "Modifying CloudLab reservation group", map[string]any{"id": resgroupID})
-	rg, err := r.client.ModifyResgroup(resgroupID, modReq, durationHours)
+	rg, err := r.client.ModifyResgroup(ctx, resgroupID, modReq, durationHours)
 	if err != nil {
 		resp.Diagnostics.AddError("Error Modifying Reservation Group", err.Error())
 		return
@@ -370,7 +370,7 @@ func (r *resgroupResource) Delete(ctx context.Context, req resource.DeleteReques
 
 	tflog.Info(ctx, "Deleting CloudLab reservation group", map[string]any{"id": state.ID.ValueString()})
 
-	if err := r.client.DeleteResgroup(state.ID.ValueString()); err != nil {
+	if err := r.client.DeleteResgroup(ctx, state.ID.ValueString()); err != nil {
 		var apiErr *APIError
 		if errors.As(err, &apiErr) && apiErr.StatusCode == 404 {
 			return

@@ -22,9 +22,8 @@ const (
 
 // Experiment status strings returned by the Portal API.
 const (
-	StatusReady    = "ready"
-	StatusFailed   = "failed"
-	StatusCreating = "created"
+	StatusReady  = "ready"
+	StatusFailed = "failed"
 )
 
 // Client is the CloudLab Portal API HTTP client.
@@ -361,7 +360,7 @@ func (e *APIError) Error() string {
 // HTTP helpers
 // ---------------------------------------------------------------------------
 
-func (c *Client) doRequest(method, path string, body any) ([]byte, error) {
+func (c *Client) doRequest(ctx context.Context, method, path string, body any) ([]byte, error) {
 	var bodyBytes []byte
 	var reqBody io.Reader
 	if body != nil {
@@ -374,7 +373,7 @@ func (c *Client) doRequest(method, path string, body any) ([]byte, error) {
 	}
 
 	url := c.portalURL + path
-	req, err := http.NewRequest(method, url, reqBody)
+	req, err := http.NewRequestWithContext(ctx, method, url, reqBody)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -419,8 +418,8 @@ func (c *Client) doRequest(method, path string, body any) ([]byte, error) {
 // ---------------------------------------------------------------------------
 
 // CreateExperiment creates a new experiment on CloudLab.
-func (c *Client) CreateExperiment(req *ExperimentCreateRequest) (*ExperimentResponse, error) {
-	body, err := c.doRequest(http.MethodPost, "/experiments", req)
+func (c *Client) CreateExperiment(ctx context.Context, req *ExperimentCreateRequest) (*ExperimentResponse, error) {
+	body, err := c.doRequest(ctx, http.MethodPost, "/experiments", req)
 	if err != nil {
 		return nil, err
 	}
@@ -432,8 +431,8 @@ func (c *Client) CreateExperiment(req *ExperimentCreateRequest) (*ExperimentResp
 }
 
 // GetExperiment retrieves an experiment by its Portal ID (name:project or UUID).
-func (c *Client) GetExperiment(experimentID string) (*ExperimentResponse, error) {
-	body, err := c.doRequest(http.MethodGet, "/experiments/"+experimentID, nil)
+func (c *Client) GetExperiment(ctx context.Context, experimentID string) (*ExperimentResponse, error) {
+	body, err := c.doRequest(ctx, http.MethodGet, "/experiments/"+experimentID, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -445,12 +444,12 @@ func (c *Client) GetExperiment(experimentID string) (*ExperimentResponse, error)
 }
 
 // ListExperiments lists experiments, optionally filtered by project.
-func (c *Client) ListExperiments(project string) ([]ExperimentResponse, error) {
+func (c *Client) ListExperiments(ctx context.Context, project string) ([]ExperimentResponse, error) {
 	path := "/experiments"
 	if project != "" {
 		path += "?project=" + project
 	}
-	body, err := c.doRequest(http.MethodGet, path, nil)
+	body, err := c.doRequest(ctx, http.MethodGet, path, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -462,8 +461,8 @@ func (c *Client) ListExperiments(project string) ([]ExperimentResponse, error) {
 }
 
 // ExtendExperiment extends a running experiment's lifetime (PUT /experiments/{id}).
-func (c *Client) ExtendExperiment(experimentID string, req *ExperimentExtendRequest) (*ExperimentResponse, error) {
-	body, err := c.doRequest(http.MethodPut, "/experiments/"+experimentID, req)
+func (c *Client) ExtendExperiment(ctx context.Context, experimentID string, req *ExperimentExtendRequest) (*ExperimentResponse, error) {
+	body, err := c.doRequest(ctx, http.MethodPut, "/experiments/"+experimentID, req)
 	if err != nil {
 		return nil, err
 	}
@@ -475,8 +474,8 @@ func (c *Client) ExtendExperiment(experimentID string, req *ExperimentExtendRequ
 }
 
 // ModifyExperiment modifies bindings on a running experiment (PATCH /experiments/{id}).
-func (c *Client) ModifyExperiment(experimentID string, req *ExperimentModifyRequest) (*ExperimentResponse, error) {
-	body, err := c.doRequest(http.MethodPatch, "/experiments/"+experimentID, req)
+func (c *Client) ModifyExperiment(ctx context.Context, experimentID string, req *ExperimentModifyRequest) (*ExperimentResponse, error) {
+	body, err := c.doRequest(ctx, http.MethodPatch, "/experiments/"+experimentID, req)
 	if err != nil {
 		return nil, err
 	}
@@ -488,8 +487,8 @@ func (c *Client) ModifyExperiment(experimentID string, req *ExperimentModifyRequ
 }
 
 // DeleteExperiment deletes (terminates) an experiment.
-func (c *Client) DeleteExperiment(experimentID string) error {
-	_, err := c.doRequest(http.MethodDelete, "/experiments/"+experimentID, nil)
+func (c *Client) DeleteExperiment(ctx context.Context, experimentID string) error {
+	_, err := c.doRequest(ctx, http.MethodDelete, "/experiments/"+experimentID, nil)
 	return err
 }
 
@@ -501,7 +500,7 @@ func (c *Client) WaitForExperiment(ctx context.Context, experimentID string) (*E
 			return nil, fmt.Errorf("timed out waiting for experiment %s to become ready", experimentID)
 		}
 
-		exp, err := c.GetExperiment(experimentID)
+		exp, err := c.GetExperiment(ctx, experimentID)
 		if err != nil {
 			return nil, fmt.Errorf("error polling experiment status: %w", err)
 		}
@@ -524,8 +523,8 @@ func (c *Client) WaitForExperiment(ctx context.Context, experimentID string) (*E
 // GetManifests retrieves the manifests for a running experiment.
 //
 // Deprecated: Use GetRawManifests for the correct XML-based response format.
-func (c *Client) GetManifests(experimentID string) ([]ManifestEntry, error) {
-	body, err := c.doRequest(http.MethodGet, "/experiments/"+experimentID+"/manifests", nil)
+func (c *Client) GetManifests(ctx context.Context, experimentID string) ([]ManifestEntry, error) {
+	body, err := c.doRequest(ctx, http.MethodGet, "/experiments/"+experimentID+"/manifests", nil)
 	if err != nil {
 		return nil, err
 	}
@@ -539,8 +538,8 @@ func (c *Client) GetManifests(experimentID string) ([]ManifestEntry, error) {
 // GetRawManifests retrieves the manifests for a running experiment as a map of
 // aggregate URN -> RSpec XML string. The CloudLab API returns RSpec XML documents,
 // not the structured JSON format.
-func (c *Client) GetRawManifests(experimentID string) (map[string]string, error) {
-	body, err := c.doRequest(http.MethodGet, "/experiments/"+experimentID+"/manifests", nil)
+func (c *Client) GetRawManifests(ctx context.Context, experimentID string) (map[string]string, error) {
+	body, err := c.doRequest(ctx, http.MethodGet, "/experiments/"+experimentID+"/manifests", nil)
 	if err != nil {
 		return nil, err
 	}
@@ -552,8 +551,8 @@ func (c *Client) GetRawManifests(experimentID string) (map[string]string, error)
 }
 
 // GetExperimentNode retrieves info about a specific node in an experiment.
-func (c *Client) GetExperimentNode(experimentID, clientID string) (*AggregateNode, error) {
-	body, err := c.doRequest(http.MethodGet, "/experiments/"+experimentID+"/node/"+clientID, nil)
+func (c *Client) GetExperimentNode(ctx context.Context, experimentID, clientID string) (*AggregateNode, error) {
+	body, err := c.doRequest(ctx, http.MethodGet, "/experiments/"+experimentID+"/node/"+clientID, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -565,8 +564,8 @@ func (c *Client) GetExperimentNode(experimentID, clientID string) (*AggregateNod
 }
 
 // RebootExperimentNodes reboots all nodes in an experiment.
-func (c *Client) RebootExperimentNodes(experimentID string) (*ExperimentResponse, error) {
-	body, err := c.doRequest(http.MethodPost, "/experiments/"+experimentID+"/nodes/reboot", nil)
+func (c *Client) RebootExperimentNodes(ctx context.Context, experimentID string) (*ExperimentResponse, error) {
+	body, err := c.doRequest(ctx, http.MethodPost, "/experiments/"+experimentID+"/nodes/reboot", nil)
 	if err != nil {
 		return nil, err
 	}
@@ -578,8 +577,8 @@ func (c *Client) RebootExperimentNodes(experimentID string) (*ExperimentResponse
 }
 
 // ReloadExperimentNodes reloads all nodes in an experiment.
-func (c *Client) ReloadExperimentNodes(experimentID string) (*ExperimentResponse, error) {
-	body, err := c.doRequest(http.MethodPost, "/experiments/"+experimentID+"/nodes/reload", nil)
+func (c *Client) ReloadExperimentNodes(ctx context.Context, experimentID string) (*ExperimentResponse, error) {
+	body, err := c.doRequest(ctx, http.MethodPost, "/experiments/"+experimentID+"/nodes/reload", nil)
 	if err != nil {
 		return nil, err
 	}
@@ -591,8 +590,8 @@ func (c *Client) ReloadExperimentNodes(experimentID string) (*ExperimentResponse
 }
 
 // StartExperimentNodes starts all nodes in an experiment.
-func (c *Client) StartExperimentNodes(experimentID string) (*ExperimentResponse, error) {
-	body, err := c.doRequest(http.MethodPost, "/experiments/"+experimentID+"/nodes/start", nil)
+func (c *Client) StartExperimentNodes(ctx context.Context, experimentID string) (*ExperimentResponse, error) {
+	body, err := c.doRequest(ctx, http.MethodPost, "/experiments/"+experimentID+"/nodes/start", nil)
 	if err != nil {
 		return nil, err
 	}
@@ -604,8 +603,8 @@ func (c *Client) StartExperimentNodes(experimentID string) (*ExperimentResponse,
 }
 
 // StopExperimentNodes stops all nodes in an experiment.
-func (c *Client) StopExperimentNodes(experimentID string) (*ExperimentResponse, error) {
-	body, err := c.doRequest(http.MethodPost, "/experiments/"+experimentID+"/nodes/stop", nil)
+func (c *Client) StopExperimentNodes(ctx context.Context, experimentID string) (*ExperimentResponse, error) {
+	body, err := c.doRequest(ctx, http.MethodPost, "/experiments/"+experimentID+"/nodes/stop", nil)
 	if err != nil {
 		return nil, err
 	}
@@ -617,8 +616,8 @@ func (c *Client) StopExperimentNodes(experimentID string) (*ExperimentResponse, 
 }
 
 // PowercycleExperimentNodes power-cycles all nodes in an experiment.
-func (c *Client) PowercycleExperimentNodes(experimentID string) (*ExperimentResponse, error) {
-	body, err := c.doRequest(http.MethodPost, "/experiments/"+experimentID+"/nodes/powercycle", nil)
+func (c *Client) PowercycleExperimentNodes(ctx context.Context, experimentID string) (*ExperimentResponse, error) {
+	body, err := c.doRequest(ctx, http.MethodPost, "/experiments/"+experimentID+"/nodes/powercycle", nil)
 	if err != nil {
 		return nil, err
 	}
@@ -630,8 +629,8 @@ func (c *Client) PowercycleExperimentNodes(experimentID string) (*ExperimentResp
 }
 
 // RebootExperimentNode reboots a single node in an experiment.
-func (c *Client) RebootExperimentNode(experimentID, clientID string) (*AggregateNode, error) {
-	body, err := c.doRequest(http.MethodPost, "/experiments/"+experimentID+"/node/"+clientID+"/reboot", nil)
+func (c *Client) RebootExperimentNode(ctx context.Context, experimentID, clientID string) (*AggregateNode, error) {
+	body, err := c.doRequest(ctx, http.MethodPost, "/experiments/"+experimentID+"/node/"+clientID+"/reboot", nil)
 	if err != nil {
 		return nil, err
 	}
@@ -643,8 +642,8 @@ func (c *Client) RebootExperimentNode(experimentID, clientID string) (*Aggregate
 }
 
 // ReloadExperimentNode reloads a single node in an experiment.
-func (c *Client) ReloadExperimentNode(experimentID, clientID string) (*AggregateNode, error) {
-	body, err := c.doRequest(http.MethodPost, "/experiments/"+experimentID+"/node/"+clientID+"/reload", nil)
+func (c *Client) ReloadExperimentNode(ctx context.Context, experimentID, clientID string) (*AggregateNode, error) {
+	body, err := c.doRequest(ctx, http.MethodPost, "/experiments/"+experimentID+"/node/"+clientID+"/reload", nil)
 	if err != nil {
 		return nil, err
 	}
@@ -656,8 +655,8 @@ func (c *Client) ReloadExperimentNode(experimentID, clientID string) (*Aggregate
 }
 
 // StartExperimentNode starts a stopped node in an experiment.
-func (c *Client) StartExperimentNode(experimentID, clientID string) (*AggregateNode, error) {
-	body, err := c.doRequest(http.MethodPost, "/experiments/"+experimentID+"/node/"+clientID+"/start", nil)
+func (c *Client) StartExperimentNode(ctx context.Context, experimentID, clientID string) (*AggregateNode, error) {
+	body, err := c.doRequest(ctx, http.MethodPost, "/experiments/"+experimentID+"/node/"+clientID+"/start", nil)
 	if err != nil {
 		return nil, err
 	}
@@ -669,8 +668,8 @@ func (c *Client) StartExperimentNode(experimentID, clientID string) (*AggregateN
 }
 
 // StopExperimentNode stops a single node in an experiment.
-func (c *Client) StopExperimentNode(experimentID, clientID string) (*AggregateNode, error) {
-	body, err := c.doRequest(http.MethodPost, "/experiments/"+experimentID+"/node/"+clientID+"/stop", nil)
+func (c *Client) StopExperimentNode(ctx context.Context, experimentID, clientID string) (*AggregateNode, error) {
+	body, err := c.doRequest(ctx, http.MethodPost, "/experiments/"+experimentID+"/node/"+clientID+"/stop", nil)
 	if err != nil {
 		return nil, err
 	}
@@ -682,8 +681,8 @@ func (c *Client) StopExperimentNode(experimentID, clientID string) (*AggregateNo
 }
 
 // PowercycleExperimentNode power-cycles a single node in an experiment.
-func (c *Client) PowercycleExperimentNode(experimentID, clientID string) (*AggregateNode, error) {
-	body, err := c.doRequest(http.MethodPost, "/experiments/"+experimentID+"/node/"+clientID+"/powercycle", nil)
+func (c *Client) PowercycleExperimentNode(ctx context.Context, experimentID, clientID string) (*AggregateNode, error) {
+	body, err := c.doRequest(ctx, http.MethodPost, "/experiments/"+experimentID+"/node/"+clientID+"/powercycle", nil)
 	if err != nil {
 		return nil, err
 	}
@@ -695,22 +694,22 @@ func (c *Client) PowercycleExperimentNode(experimentID, clientID string) (*Aggre
 }
 
 // ConnectExperimentVlan connects a shared VLAN in one experiment to another.
-func (c *Client) ConnectExperimentVlan(experimentID, sourceLan, targetID, targetLan string) error {
+func (c *Client) ConnectExperimentVlan(ctx context.Context, experimentID, sourceLan, targetID, targetLan string) error {
 	path := fmt.Sprintf("/experiments/%s/vlan/%s/connect?target_id=%s&target_lan=%s",
 		experimentID, sourceLan, targetID, targetLan)
-	_, err := c.doRequest(http.MethodPost, path, nil)
+	_, err := c.doRequest(ctx, http.MethodPost, path, nil)
 	return err
 }
 
 // DisconnectExperimentVlan disconnects a shared VLAN in an experiment.
-func (c *Client) DisconnectExperimentVlan(experimentID, sourceLan string) error {
-	_, err := c.doRequest(http.MethodPost, "/experiments/"+experimentID+"/vlan/"+sourceLan+"/disconnect", nil)
+func (c *Client) DisconnectExperimentVlan(ctx context.Context, experimentID, sourceLan string) error {
+	_, err := c.doRequest(ctx, http.MethodPost, "/experiments/"+experimentID+"/vlan/"+sourceLan+"/disconnect", nil)
 	return err
 }
 
 // StartSnapshot initiates a snapshot of a node in an experiment.
-func (c *Client) StartSnapshot(experimentID, clientID string, req *SnapshotRequest) (*SnapshotStatus, error) {
-	body, err := c.doRequest(http.MethodPost, "/experiments/"+experimentID+"/snapshot/"+clientID, req)
+func (c *Client) StartSnapshot(ctx context.Context, experimentID, clientID string, req *SnapshotRequest) (*SnapshotStatus, error) {
+	body, err := c.doRequest(ctx, http.MethodPost, "/experiments/"+experimentID+"/snapshot/"+clientID, req)
 	if err != nil {
 		return nil, err
 	}
@@ -722,8 +721,8 @@ func (c *Client) StartSnapshot(experimentID, clientID string, req *SnapshotReque
 }
 
 // GetSnapshotStatus retrieves the status of a snapshot operation.
-func (c *Client) GetSnapshotStatus(experimentID, snapshotID string) (*SnapshotStatus, error) {
-	body, err := c.doRequest(http.MethodGet, "/experiments/"+experimentID+"/snapshot/"+snapshotID, nil)
+func (c *Client) GetSnapshotStatus(ctx context.Context, experimentID, snapshotID string) (*SnapshotStatus, error) {
+	body, err := c.doRequest(ctx, http.MethodGet, "/experiments/"+experimentID+"/snapshot/"+snapshotID, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -739,8 +738,8 @@ func (c *Client) GetSnapshotStatus(experimentID, snapshotID string) (*SnapshotSt
 // ---------------------------------------------------------------------------
 
 // CreateProfile creates a new experiment profile.
-func (c *Client) CreateProfile(req *ProfileCreateRequest) (*ProfileResponse, error) {
-	body, err := c.doRequest(http.MethodPost, "/profiles", req)
+func (c *Client) CreateProfile(ctx context.Context, req *ProfileCreateRequest) (*ProfileResponse, error) {
+	body, err := c.doRequest(ctx, http.MethodPost, "/profiles", req)
 	if err != nil {
 		return nil, err
 	}
@@ -752,8 +751,8 @@ func (c *Client) CreateProfile(req *ProfileCreateRequest) (*ProfileResponse, err
 }
 
 // GetProfile retrieves a profile by its Portal ID.
-func (c *Client) GetProfile(profileID string) (*ProfileResponse, error) {
-	body, err := c.doRequest(http.MethodGet, "/profiles/"+profileID, nil)
+func (c *Client) GetProfile(ctx context.Context, profileID string) (*ProfileResponse, error) {
+	body, err := c.doRequest(ctx, http.MethodGet, "/profiles/"+profileID, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -765,12 +764,12 @@ func (c *Client) GetProfile(profileID string) (*ProfileResponse, error) {
 }
 
 // ListProfiles lists all profiles, optionally filtered by project.
-func (c *Client) ListProfiles(project string) ([]ProfileResponse, error) {
+func (c *Client) ListProfiles(ctx context.Context, project string) ([]ProfileResponse, error) {
 	path := "/profiles"
 	if project != "" {
 		path += "?project=" + project
 	}
-	body, err := c.doRequest(http.MethodGet, path, nil)
+	body, err := c.doRequest(ctx, http.MethodGet, path, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -782,8 +781,8 @@ func (c *Client) ListProfiles(project string) ([]ProfileResponse, error) {
 }
 
 // ModifyProfile modifies mutable profile attributes (PATCH /profiles/{id}).
-func (c *Client) ModifyProfile(profileID string, req *ProfileModifyRequest) (*ProfileResponse, error) {
-	body, err := c.doRequest(http.MethodPatch, "/profiles/"+profileID, req)
+func (c *Client) ModifyProfile(ctx context.Context, profileID string, req *ProfileModifyRequest) (*ProfileResponse, error) {
+	body, err := c.doRequest(ctx, http.MethodPatch, "/profiles/"+profileID, req)
 	if err != nil {
 		return nil, err
 	}
@@ -795,8 +794,8 @@ func (c *Client) ModifyProfile(profileID string, req *ProfileModifyRequest) (*Pr
 }
 
 // UpdateProfile triggers an update on a repository-backed profile (PUT /profiles/{id}).
-func (c *Client) UpdateProfile(profileID string) (*ProfileResponse, error) {
-	body, err := c.doRequest(http.MethodPut, "/profiles/"+profileID, nil)
+func (c *Client) UpdateProfile(ctx context.Context, profileID string) (*ProfileResponse, error) {
+	body, err := c.doRequest(ctx, http.MethodPut, "/profiles/"+profileID, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -808,14 +807,14 @@ func (c *Client) UpdateProfile(profileID string) (*ProfileResponse, error) {
 }
 
 // DeleteProfile deletes a profile.
-func (c *Client) DeleteProfile(profileID string) error {
-	_, err := c.doRequest(http.MethodDelete, "/profiles/"+profileID, nil)
+func (c *Client) DeleteProfile(ctx context.Context, profileID string) error {
+	_, err := c.doRequest(ctx, http.MethodDelete, "/profiles/"+profileID, nil)
 	return err
 }
 
 // GetProfileVersion retrieves a specific version of a profile.
-func (c *Client) GetProfileVersion(profileID, versionID string) (*ProfileResponse, error) {
-	body, err := c.doRequest(http.MethodGet, "/profiles/"+profileID+"/versions/"+versionID, nil)
+func (c *Client) GetProfileVersion(ctx context.Context, profileID, versionID string) (*ProfileResponse, error) {
+	body, err := c.doRequest(ctx, http.MethodGet, "/profiles/"+profileID+"/versions/"+versionID, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -827,8 +826,8 @@ func (c *Client) GetProfileVersion(profileID, versionID string) (*ProfileRespons
 }
 
 // DeleteProfileVersion deletes a specific version of a profile.
-func (c *Client) DeleteProfileVersion(profileID, versionID string) error {
-	_, err := c.doRequest(http.MethodDelete, "/profiles/"+profileID+"/versions/"+versionID, nil)
+func (c *Client) DeleteProfileVersion(ctx context.Context, profileID, versionID string) error {
+	_, err := c.doRequest(ctx, http.MethodDelete, "/profiles/"+profileID+"/versions/"+versionID, nil)
 	return err
 }
 
@@ -837,12 +836,12 @@ func (c *Client) DeleteProfileVersion(profileID, versionID string) error {
 // ---------------------------------------------------------------------------
 
 // CreateResgroup creates a new reservation group.
-func (c *Client) CreateResgroup(req *ResgroupCreateRequest, durationHours *int64) (*ResgroupResponse, error) {
+func (c *Client) CreateResgroup(ctx context.Context, req *ResgroupCreateRequest, durationHours *int64) (*ResgroupResponse, error) {
 	path := "/resgroups"
 	if durationHours != nil {
 		path += fmt.Sprintf("?duration=%d", *durationHours)
 	}
-	body, err := c.doRequest(http.MethodPost, path, req)
+	body, err := c.doRequest(ctx, http.MethodPost, path, req)
 	if err != nil {
 		return nil, err
 	}
@@ -854,8 +853,8 @@ func (c *Client) CreateResgroup(req *ResgroupCreateRequest, durationHours *int64
 }
 
 // GetResgroup retrieves a reservation group by ID.
-func (c *Client) GetResgroup(resgroupID string) (*ResgroupResponse, error) {
-	body, err := c.doRequest(http.MethodGet, "/resgroups/"+resgroupID, nil)
+func (c *Client) GetResgroup(ctx context.Context, resgroupID string) (*ResgroupResponse, error) {
+	body, err := c.doRequest(ctx, http.MethodGet, "/resgroups/"+resgroupID, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -867,12 +866,12 @@ func (c *Client) GetResgroup(resgroupID string) (*ResgroupResponse, error) {
 }
 
 // ModifyResgroup modifies an existing reservation group (PUT /resgroups/{id}).
-func (c *Client) ModifyResgroup(resgroupID string, req *ResgroupCreateRequest, durationHours *int64) (*ResgroupResponse, error) {
+func (c *Client) ModifyResgroup(ctx context.Context, resgroupID string, req *ResgroupCreateRequest, durationHours *int64) (*ResgroupResponse, error) {
 	path := "/resgroups/" + resgroupID
 	if durationHours != nil {
 		path += fmt.Sprintf("?duration=%d", *durationHours)
 	}
-	body, err := c.doRequest(http.MethodPut, path, req)
+	body, err := c.doRequest(ctx, http.MethodPut, path, req)
 	if err != nil {
 		return nil, err
 	}
@@ -884,15 +883,15 @@ func (c *Client) ModifyResgroup(resgroupID string, req *ResgroupCreateRequest, d
 }
 
 // DeleteResgroup deletes a reservation group.
-func (c *Client) DeleteResgroup(resgroupID string) error {
-	_, err := c.doRequest(http.MethodDelete, "/resgroups/"+resgroupID, nil)
+func (c *Client) DeleteResgroup(ctx context.Context, resgroupID string) error {
+	_, err := c.doRequest(ctx, http.MethodDelete, "/resgroups/"+resgroupID, nil)
 	return err
 }
 
 // SearchResgroup searches for a free time slot for a resgroup.
-func (c *Client) SearchResgroup(req *ResgroupSearchRequest, durationHours int64) (*ResgroupSearchResult, error) {
+func (c *Client) SearchResgroup(ctx context.Context, req *ResgroupSearchRequest, durationHours int64) (*ResgroupSearchResult, error) {
 	path := fmt.Sprintf("/resgroups/search?duration=%d", durationHours)
-	body, err := c.doRequest(http.MethodPost, path, req)
+	body, err := c.doRequest(ctx, http.MethodPost, path, req)
 	if err != nil {
 		return nil, err
 	}
@@ -904,8 +903,8 @@ func (c *Client) SearchResgroup(req *ResgroupSearchRequest, durationHours int64)
 }
 
 // AddResgroupReservation adds a reservation to an existing resgroup.
-func (c *Client) AddResgroupReservation(resgroupID string, req *ResgroupReservation) (*ResgroupResponse, error) {
-	body, err := c.doRequest(http.MethodPost, "/resgroups/"+resgroupID+"/reservations", req)
+func (c *Client) AddResgroupReservation(ctx context.Context, resgroupID string, req *ResgroupReservation) (*ResgroupResponse, error) {
+	body, err := c.doRequest(ctx, http.MethodPost, "/resgroups/"+resgroupID+"/reservations", req)
 	if err != nil {
 		return nil, err
 	}
@@ -917,7 +916,7 @@ func (c *Client) AddResgroupReservation(resgroupID string, req *ResgroupReservat
 }
 
 // DeleteResgroupReservation removes a reservation from a resgroup.
-func (c *Client) DeleteResgroupReservation(resgroupID, reservationID string) error {
-	_, err := c.doRequest(http.MethodDelete, "/resgroups/"+resgroupID+"/reservations/"+reservationID, nil)
+func (c *Client) DeleteResgroupReservation(ctx context.Context, resgroupID, reservationID string) error {
+	_, err := c.doRequest(ctx, http.MethodDelete, "/resgroups/"+resgroupID+"/reservations/"+reservationID, nil)
 	return err
 }

@@ -325,7 +325,7 @@ func (r *experimentResource) Create(ctx context.Context, req resource.CreateRequ
 		"project": createReq.Project,
 	})
 
-	exp, err := r.client.CreateExperiment(createReq)
+	exp, err := r.client.CreateExperiment(ctx, createReq)
 	if err != nil {
 		resp.Diagnostics.AddError("Error Creating Experiment", err.Error())
 		return
@@ -360,7 +360,7 @@ func (r *experimentResource) Read(ctx context.Context, req resource.ReadRequest,
 		return
 	}
 
-	exp, err := r.client.GetExperiment(state.ID.ValueString())
+	exp, err := r.client.GetExperiment(ctx, state.ID.ValueString())
 	if err != nil {
 		var apiErr *APIError
 		if errors.As(err, &apiErr) && apiErr.StatusCode == 404 {
@@ -405,7 +405,7 @@ func (r *experimentResource) Update(ctx context.Context, req resource.UpdateRequ
 			extReq.Reason = &v
 		}
 		tflog.Info(ctx, "Extending CloudLab experiment", map[string]any{"id": experimentID})
-		exp, err = r.client.ExtendExperiment(experimentID, extReq)
+		exp, err = r.client.ExtendExperiment(ctx, experimentID, extReq)
 		if err != nil {
 			resp.Diagnostics.AddError("Error Extending Experiment", err.Error())
 			return
@@ -423,7 +423,7 @@ func (r *experimentResource) Update(ctx context.Context, req resource.UpdateRequ
 		}
 		modReq := &ExperimentModifyRequest{Bindings: bindings}
 		tflog.Info(ctx, "Modifying CloudLab experiment bindings", map[string]any{"id": experimentID})
-		exp, err = r.client.ModifyExperiment(experimentID, modReq)
+		exp, err = r.client.ModifyExperiment(ctx, experimentID, modReq)
 		if err != nil {
 			resp.Diagnostics.AddError("Error Modifying Experiment", err.Error())
 			return
@@ -432,7 +432,7 @@ func (r *experimentResource) Update(ctx context.Context, req resource.UpdateRequ
 
 	// If no API call was made, refresh state
 	if exp == nil {
-		exp, err = r.client.GetExperiment(experimentID)
+		exp, err = r.client.GetExperiment(ctx, experimentID)
 		if err != nil {
 			resp.Diagnostics.AddError("Error Reading Experiment", err.Error())
 			return
@@ -455,7 +455,7 @@ func (r *experimentResource) Delete(ctx context.Context, req resource.DeleteRequ
 
 	tflog.Info(ctx, "Deleting CloudLab experiment", map[string]any{"id": state.ID.ValueString()})
 
-	if err := r.client.DeleteExperiment(state.ID.ValueString()); err != nil {
+	if err := r.client.DeleteExperiment(ctx, state.ID.ValueString()); err != nil {
 		var apiErr *APIError
 		if errors.As(err, &apiErr) && apiErr.StatusCode == 404 {
 			// Already gone, nothing to do.

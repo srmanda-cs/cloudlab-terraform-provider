@@ -124,7 +124,7 @@ func (r *vlanConnectionResource) Create(ctx context.Context, req resource.Create
 		"target_lan":    targetLan,
 	})
 
-	if err := r.client.ConnectExperimentVlan(experimentID, sourceLan, targetID, targetLan); err != nil {
+	if err := r.client.ConnectExperimentVlan(ctx, experimentID, sourceLan, targetID, targetLan); err != nil {
 		resp.Diagnostics.AddError("Error Connecting VLAN", err.Error())
 		return
 	}
@@ -138,15 +138,15 @@ func (r *vlanConnectionResource) Create(ctx context.Context, req resource.Create
 
 // Read refreshes the state. The CloudLab API does not provide a direct way to query
 // VLAN connection status, so we keep state as-is (connection state is opaque).
-func (r *vlanConnectionResource) Read(_ context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
+func (r *vlanConnectionResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
 	var state vlanConnectionResourceModel
-	diags := req.State.Get(context.Background(), &state)
+	diags := req.State.Get(ctx, &state)
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
 	// No API for querying connection state — preserve existing state.
-	diags = resp.State.Set(context.Background(), state)
+	diags = resp.State.Set(ctx, state)
 	resp.Diagnostics.Append(diags...)
 }
 
@@ -172,7 +172,7 @@ func (r *vlanConnectionResource) Delete(ctx context.Context, req resource.Delete
 		"source_lan":    state.SourceLan.ValueString(),
 	})
 
-	if err := r.client.DisconnectExperimentVlan(state.ExperimentID.ValueString(), state.SourceLan.ValueString()); err != nil {
+	if err := r.client.DisconnectExperimentVlan(ctx, state.ExperimentID.ValueString(), state.SourceLan.ValueString()); err != nil {
 		resp.Diagnostics.AddError("Error Disconnecting VLAN", err.Error())
 		return
 	}

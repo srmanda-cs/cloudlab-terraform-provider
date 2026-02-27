@@ -223,7 +223,7 @@ func (d *manifestDataSource) Read(ctx context.Context, req datasource.ReadReques
 		"experiment_id": state.ExperimentID.ValueString(),
 	})
 
-	rawManifests, err := d.client.GetRawManifests(state.ExperimentID.ValueString())
+	rawManifests, err := d.client.GetRawManifests(ctx, state.ExperimentID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Error Reading Experiment Manifests", err.Error())
 		return

@@ -186,7 +186,7 @@ func (d *resgroupDataSource) Read(ctx context.Context, req datasource.ReadReques
 
 	tflog.Debug(ctx, "Reading CloudLab reservation group", map[string]any{"id": state.ID.ValueString()})
 
-	rg, err := d.client.GetResgroup(state.ID.ValueString())
+	rg, err := d.client.GetResgroup(ctx, state.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Error Reading Reservation Group", err.Error())
 		return

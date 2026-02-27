@@ -189,7 +189,7 @@ func (r *profileResource) Create(ctx context.Context, req resource.CreateRequest
 		"project": createReq.Project,
 	})
 
-	profile, err := r.client.CreateProfile(createReq)
+	profile, err := r.client.CreateProfile(ctx, createReq)
 	if err != nil {
 		resp.Diagnostics.AddError("Error Creating Profile", err.Error())
 		return
@@ -210,7 +210,7 @@ func (r *profileResource) Read(ctx context.Context, req resource.ReadRequest, re
 		return
 	}
 
-	profile, err := r.client.GetProfile(state.ID.ValueString())
+	profile, err := r.client.GetProfile(ctx, state.ID.ValueString())
 	if err != nil {
 		var apiErr *APIError
 		if errors.As(err, &apiErr) && apiErr.StatusCode == 404 {
@@ -265,7 +265,7 @@ func (r *profileResource) Update(ctx context.Context, req resource.UpdateRequest
 		}
 
 		tflog.Info(ctx, "Modifying CloudLab profile", map[string]any{"id": profileID})
-		profile, err = r.client.ModifyProfile(profileID, modReq)
+		profile, err = r.client.ModifyProfile(ctx, profileID, modReq)
 		if err != nil {
 			resp.Diagnostics.AddError("Error Modifying Profile", err.Error())
 			return
@@ -274,7 +274,7 @@ func (r *profileResource) Update(ctx context.Context, req resource.UpdateRequest
 
 	// If no changes needed a PATCH call, refresh state
 	if profile == nil {
-		profile, err = r.client.GetProfile(profileID)
+		profile, err = r.client.GetProfile(ctx, profileID)
 		if err != nil {
 			resp.Diagnostics.AddError("Error Reading Profile", err.Error())
 			return
@@ -297,7 +297,7 @@ func (r *profileResource) Delete(ctx context.Context, req resource.DeleteRequest
 
 	tflog.Info(ctx, "Deleting CloudLab profile", map[string]any{"id": state.ID.ValueString()})
 
-	if err := r.client.DeleteProfile(state.ID.ValueString()); err != nil {
+	if err := r.client.DeleteProfile(ctx, state.ID.ValueString()); err != nil {
 		var apiErr *APIError
 		if errors.As(err, &apiErr) && apiErr.StatusCode == 404 {
 			return

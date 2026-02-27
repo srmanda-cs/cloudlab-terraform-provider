@@ -175,6 +175,7 @@ func (r *snapshotResource) Create(ctx context.Context, req resource.CreateReques
 	})
 
 	status, err := r.client.StartSnapshot(
+		ctx,
 		plan.ExperimentID.ValueString(),
 		plan.ClientID.ValueString(),
 		snapshotReq,
@@ -215,7 +216,7 @@ func (r *snapshotResource) Read(ctx context.Context, req resource.ReadRequest, r
 		return
 	}
 
-	status, err := r.client.GetSnapshotStatus(state.ExperimentID.ValueString(), state.ID.ValueString())
+	status, err := r.client.GetSnapshotStatus(ctx, state.ExperimentID.ValueString(), state.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Error Reading Snapshot Status", err.Error())
 		return
@@ -250,7 +251,7 @@ func (r *snapshotResource) waitForSnapshot(ctx context.Context, experimentID, sn
 			return nil, fmt.Errorf("timed out waiting for snapshot %s to complete", snapshotID)
 		}
 
-		status, err := r.client.GetSnapshotStatus(experimentID, snapshotID)
+		status, err := r.client.GetSnapshotStatus(ctx, experimentID, snapshotID)
 		if err != nil {
 			return nil, fmt.Errorf("error polling snapshot status: %w", err)
 		}

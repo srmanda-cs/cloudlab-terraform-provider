@@ -119,7 +119,7 @@ func (d *nodeDataSource) Read(ctx context.Context, req datasource.ReadRequest, r
 		"client_id":     state.ClientID.ValueString(),
 	})
 
-	node, err := d.client.GetExperimentNode(state.ExperimentID.ValueString(), state.ClientID.ValueString())
+	node, err := d.client.GetExperimentNode(ctx, state.ExperimentID.ValueString(), state.ClientID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Error Reading Experiment Node", err.Error())
 		return

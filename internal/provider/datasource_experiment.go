@@ -117,7 +117,7 @@ func (d *experimentDataSource) Read(ctx context.Context, req datasource.ReadRequ
 
 	tflog.Debug(ctx, "Reading CloudLab experiment", map[string]any{"id": state.ID.ValueString()})
 
-	exp, err := d.client.GetExperiment(state.ID.ValueString())
+	exp, err := d.client.GetExperiment(ctx, state.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Error Reading Experiment", err.Error())
 		return

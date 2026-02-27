@@ -137,7 +137,7 @@ func (d *profileDataSource) Read(ctx context.Context, req datasource.ReadRequest
 
 	tflog.Debug(ctx, "Reading CloudLab profile", map[string]any{"id": state.ID.ValueString()})
 
-	profile, err := d.client.GetProfile(state.ID.ValueString())
+	profile, err := d.client.GetProfile(ctx, state.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Error Reading Profile", err.Error())
 		return
