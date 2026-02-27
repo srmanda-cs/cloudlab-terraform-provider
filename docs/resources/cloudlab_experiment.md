@@ -51,10 +51,10 @@ resource "cloudlab_experiment" "run" {
   duration        = 48
 
   # Pass parameter bindings to parameterized profiles
-  bindings = jsonencode({
-    n_nodes    = 4
-    node_type  = "xl170"
-  })
+  bindings = {
+    n_nodes   = "4"
+    node_type = "xl170"
+  }
 }
 ```
 
@@ -165,7 +165,7 @@ output "node1_ipv4" {
 - `stop_at` (String) — Schedule the experiment to stop at a future time (RFC3339 format). Validated at plan time. **Forces new resource.**
 - `paramset_name` (String) — Name of a saved parameter set to apply to the profile. **Forces new resource.**
 - `paramset_owner` (String) — The owner (username) of the parameter set. **Forces new resource.**
-- `bindings` (String) — JSON-encoded parameter bindings to apply to the profile (must be a valid JSON object, e.g. `jsonencode({n_nodes = 4})`). Validated at plan time. Mutable: changing this value performs a `PATCH /experiments/{id}` to apply new bindings to the running experiment.
+- `bindings` (Map of String) — Parameter bindings to apply to the profile as a native HCL map. Values must be strings; use `tostring()` for numeric parameters (e.g. `{ n_nodes = "4", node_type = "xl170" }`). Mutable: changing this value performs a `PATCH /experiments/{id}` to apply new bindings to the running experiment.
 - `refspec` (String) — For repository-backed profiles, optionally specify a `refspec[:hash]` to use instead of the HEAD of the default branch. **Forces new resource.**
 - `sshpubkey` (String) — An additional SSH public key to install on all nodes in the experiment. **Forces new resource.**
 - `expires_at` (String) — The time the experiment should expire (RFC3339 format). Validated at plan time. Setting or changing this value performs a `PUT /experiments/{id}` to set an absolute expiry. Mutually exclusive in intent with `extend_by` — use one or the other per apply.

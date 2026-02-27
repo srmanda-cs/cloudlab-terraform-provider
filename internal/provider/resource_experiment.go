@@ -2,7 +2,6 @@ package provider
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -46,7 +45,7 @@ type experimentResourceModel struct {
 	StopAt         types.String `tfsdk:"stop_at"`
 	ParamsetName   types.String `tfsdk:"paramset_name"`
 	ParamsetOwner  types.String `tfsdk:"paramset_owner"`
-	Bindings       types.String `tfsdk:"bindings"`
+	Bindings       types.Map    `tfsdk:"bindings"`
 	Refspec        types.String `tfsdk:"refspec"`
 	SSHPubKey      types.String `tfsdk:"sshpubkey"`
 	WaitForReady   types.Bool   `tfsdk:"wait_for_ready"`
@@ -162,12 +161,11 @@ func (r *experimentResource) Schema(_ context.Context, _ resource.SchemaRequest,
 					stringplanmodifier.RequiresReplace(),
 				},
 			},
-			"bindings": schema.StringAttribute{
-				Description: "Optional JSON string of parameter bindings to apply to the profile.",
-				Optional:    true,
-				Validators: []validator.String{
-					validateJSONObject(),
-				},
+			"bindings": schema.MapAttribute{
+				ElementType: types.StringType,
+				Description: "Optional map of parameter bindings to apply to the profile. " +
+					"Values must be strings (use `tostring()` for numeric parameters if needed).",
+				Optional: true,
 			},
 			"refspec": schema.StringAttribute{
 				Description: "For repository-based profiles, optionally specify a refspec[:hash] to use instead of HEAD.",
@@ -330,12 +328,7 @@ func (r *experimentResource) Create(ctx context.Context, req resource.CreateRequ
 		createReq.ParamsetOwner = &v
 	}
 	if !plan.Bindings.IsNull() && !plan.Bindings.IsUnknown() {
-		var bindings map[string]any
-		if err := json.Unmarshal([]byte(plan.Bindings.ValueString()), &bindings); err != nil {
-			resp.Diagnostics.AddError("Invalid Bindings JSON", fmt.Sprintf("Failed to parse bindings JSON: %s", err))
-			return
-		}
-		createReq.Bindings = bindings
+		createReq.Bindings = bindingsFromMap(plan.Bindings)
 	}
 	if !plan.Refspec.IsNull() && !plan.Refspec.IsUnknown() {
 		v := plan.Refspec.ValueString()
@@ -449,10 +442,7 @@ func (r *experimentResource) Update(ctx context.Context, req resource.UpdateRequ
 	if !plan.Bindings.Equal(state.Bindings) {
 		var bindings map[string]any
 		if !plan.Bindings.IsNull() && !plan.Bindings.IsUnknown() {
-			if jsonErr := json.Unmarshal([]byte(plan.Bindings.ValueString()), &bindings); jsonErr != nil {
-				resp.Diagnostics.AddError("Invalid Bindings JSON", fmt.Sprintf("Failed to parse bindings JSON: %s", jsonErr))
-				return
-			}
+			bindings = bindingsFromMap(plan.Bindings)
 		}
 		modReq := &ExperimentModifyRequest{Bindings: bindings}
 		tflog.Info(ctx, "Modifying CloudLab experiment bindings", map[string]any{"id": experimentID})
@@ -503,6 +493,18 @@ func (r *experimentResource) Delete(ctx context.Context, req resource.DeleteRequ
 // The import ID is the experiment UUID assigned by CloudLab.
 func (r *experimentResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
 	resource.ImportStatePassthroughID(ctx, path.Root("id"), req, resp)
+}
+
+// bindingsFromMap converts a types.Map (string element type) to a map[string]any
+// suitable for sending to the CloudLab API as profile parameter bindings.
+func bindingsFromMap(m types.Map) map[string]any {
+	result := make(map[string]any, len(m.Elements()))
+	for k, v := range m.Elements() {
+		if sv, ok := v.(types.String); ok {
+			result[k] = sv.ValueString()
+		}
+	}
+	return result
 }
 
 // mapExperimentResponseToModel maps an API response to the Terraform model.

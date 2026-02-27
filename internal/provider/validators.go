@@ -2,7 +2,6 @@ package provider
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"time"
 
@@ -40,43 +39,6 @@ func (v rfc3339Validator) ValidateString(_ context.Context, req validator.String
 			req.Path,
 			"Invalid RFC3339 Timestamp",
 			fmt.Sprintf("The value %q is not a valid RFC3339 timestamp: %s", val, err),
-		)
-	}
-}
-
-// ---------------------------------------------------------------------------
-// JSON object string validator
-// ---------------------------------------------------------------------------
-
-// jsonObjectValidator verifies that a string attribute contains a valid JSON
-// object (i.e. a JSON value whose top-level type is an object/map).
-type jsonObjectValidator struct{}
-
-// validateJSONObject returns a validator.String that rejects values that are
-// not valid JSON objects.
-func validateJSONObject() validator.String {
-	return jsonObjectValidator{}
-}
-
-func (v jsonObjectValidator) Description(_ context.Context) string {
-	return "value must be a valid JSON object (e.g. {\"key\": \"value\"})"
-}
-
-func (v jsonObjectValidator) MarkdownDescription(ctx context.Context) string {
-	return v.Description(ctx)
-}
-
-func (v jsonObjectValidator) ValidateString(_ context.Context, req validator.StringRequest, resp *validator.StringResponse) {
-	if req.ConfigValue.IsNull() || req.ConfigValue.IsUnknown() {
-		return
-	}
-	val := req.ConfigValue.ValueString()
-	var obj map[string]any
-	if err := json.Unmarshal([]byte(val), &obj); err != nil {
-		resp.Diagnostics.AddAttributeError(
-			req.Path,
-			"Invalid JSON Object",
-			fmt.Sprintf("The value is not a valid JSON object: %s", err),
 		)
 	}
 }
