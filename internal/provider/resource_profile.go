@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/booldefault"
@@ -14,8 +15,10 @@ import (
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 )
 
-// Ensure profileResource satisfies the resource.Resource interface.
+// Ensure profileResource satisfies the resource.Resource and
+// resource.ResourceWithImportState interfaces.
 var _ resource.Resource = &profileResource{}
+var _ resource.ResourceWithImportState = &profileResource{}
 
 // NewProfileResource returns a new profile resource.
 func NewProfileResource() resource.Resource {
@@ -305,6 +308,12 @@ func (r *profileResource) Delete(ctx context.Context, req resource.DeleteRequest
 		resp.Diagnostics.AddError("Error Deleting Profile", err.Error())
 		return
 	}
+}
+
+// ImportState implements resource.ResourceWithImportState.
+// The import ID is the profile UUID (or project,name) assigned by CloudLab.
+func (r *profileResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
+	resource.ImportStatePassthroughID(ctx, path.Root("id"), req, resp)
 }
 
 // mapProfileResponseToModel maps an API response to the Terraform model.

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/boolplanmodifier"
@@ -16,8 +17,10 @@ import (
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 )
 
-// Ensure experimentResource satisfies the resource.Resource interface.
+// Ensure experimentResource satisfies the resource.Resource and
+// resource.ResourceWithImportState interfaces.
 var _ resource.Resource = &experimentResource{}
+var _ resource.ResourceWithImportState = &experimentResource{}
 
 // NewExperimentResource returns a new experiment resource.
 func NewExperimentResource() resource.Resource {
@@ -464,6 +467,12 @@ func (r *experimentResource) Delete(ctx context.Context, req resource.DeleteRequ
 		resp.Diagnostics.AddError("Error Deleting Experiment", err.Error())
 		return
 	}
+}
+
+// ImportState implements resource.ResourceWithImportState.
+// The import ID is the experiment UUID assigned by CloudLab.
+func (r *experimentResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
+	resource.ImportStatePassthroughID(ctx, path.Root("id"), req, resp)
 }
 
 // mapExperimentResponseToModel maps an API response to the Terraform model.

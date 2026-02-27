@@ -3,8 +3,10 @@ package provider
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
+	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/booldefault"
@@ -23,8 +25,10 @@ const (
 	snapshotStatusFailed = "failed"
 )
 
-// Ensure snapshotResource satisfies the resource.Resource interface.
+// Ensure snapshotResource satisfies the resource.Resource and
+// resource.ResourceWithImportState interfaces.
 var _ resource.Resource = &snapshotResource{}
+var _ resource.ResourceWithImportState = &snapshotResource{}
 
 // NewSnapshotResource returns a new snapshot resource.
 func NewSnapshotResource() resource.Resource {
@@ -241,6 +245,22 @@ func (r *snapshotResource) Update(_ context.Context, _ resource.UpdateRequest, r
 func (r *snapshotResource) Delete(_ context.Context, _ resource.DeleteRequest, resp *resource.DeleteResponse) {
 	// Snapshot images are not deleted via the API snapshot endpoint.
 	// They persist in CloudLab. This resource is removed from state only.
+}
+
+// ImportState implements resource.ResourceWithImportState.
+// The import ID must be in the format "experiment_id/snapshot_id" since Read requires both.
+func (r *snapshotResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
+	parts := strings.SplitN(req.ID, "/", 2)
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		resp.Diagnostics.AddError(
+			"Invalid Import ID",
+			"Expected import ID in the format \"experiment_id/snapshot_id\". "+
+				"Both the experiment UUID and the snapshot UUID are required.",
+		)
+		return
+	}
+	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("experiment_id"), parts[0])...)
+	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("id"), parts[1])...)
 }
 
 // waitForSnapshot polls until the snapshot reaches a terminal status.

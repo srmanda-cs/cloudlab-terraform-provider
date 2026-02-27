@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64planmodifier"
@@ -14,8 +15,10 @@ import (
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 )
 
-// Ensure resgroupResource satisfies the resource.Resource interface.
+// Ensure resgroupResource satisfies the resource.Resource and
+// resource.ResourceWithImportState interfaces.
 var _ resource.Resource = &resgroupResource{}
+var _ resource.ResourceWithImportState = &resgroupResource{}
 
 // NewResgroupResource returns a new reservation group resource.
 func NewResgroupResource() resource.Resource {
@@ -378,6 +381,12 @@ func (r *resgroupResource) Delete(ctx context.Context, req resource.DeleteReques
 		resp.Diagnostics.AddError("Error Deleting Reservation Group", err.Error())
 		return
 	}
+}
+
+// ImportState implements resource.ResourceWithImportState.
+// The import ID is the reservation group UUID assigned by CloudLab.
+func (r *resgroupResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
+	resource.ImportStatePassthroughID(ctx, path.Root("id"), req, resp)
 }
 
 // mapResgroupResponseToModel maps an API response to the Terraform model.
