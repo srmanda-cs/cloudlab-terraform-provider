@@ -85,14 +85,6 @@ type rspecIP struct {
 	Type    string `xml:"type,attr"`
 }
 
-// parseRSpecNodes parses node information from a raw RSpec XML string.
-// Returns nil if the XML cannot be decoded; the caller should check for an empty
-// result and use the context-aware variant parseRSpecNodesCtx when possible.
-func parseRSpecNodes(rspecXMLStr string) []manifestNodeModel {
-	nodes, _ := decodeRSpecNodes(context.Background(), rspecXMLStr)
-	return nodes
-}
-
 // decodeRSpecNodes parses node information from a raw RSpec XML string and
 // logs a warning via tflog when parsing fails, preserving the calling context.
 func decodeRSpecNodes(ctx context.Context, rspecXMLStr string) ([]manifestNodeModel, error) {
