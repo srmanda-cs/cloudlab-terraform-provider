@@ -13,6 +13,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 )
@@ -132,12 +133,18 @@ func (r *experimentResource) Schema(_ context.Context, _ resource.SchemaRequest,
 				PlanModifiers: []planmodifier.String{
 					stringplanmodifier.RequiresReplace(),
 				},
+				Validators: []validator.String{
+					validateRFC3339(),
+				},
 			},
 			"stop_at": schema.StringAttribute{
 				Description: "Schedule the experiment to stop at a future time (RFC3339 format).",
 				Optional:    true,
 				PlanModifiers: []planmodifier.String{
 					stringplanmodifier.RequiresReplace(),
+				},
+				Validators: []validator.String{
+					validateRFC3339(),
 				},
 			},
 			"paramset_name": schema.StringAttribute{
@@ -157,6 +164,9 @@ func (r *experimentResource) Schema(_ context.Context, _ resource.SchemaRequest,
 			"bindings": schema.StringAttribute{
 				Description: "Optional JSON string of parameter bindings to apply to the profile.",
 				Optional:    true,
+				Validators: []validator.String{
+					validateJSONObject(),
+				},
 			},
 			"refspec": schema.StringAttribute{
 				Description: "For repository-based profiles, optionally specify a refspec[:hash] to use instead of HEAD.",
@@ -187,6 +197,9 @@ func (r *experimentResource) Schema(_ context.Context, _ resource.SchemaRequest,
 					"Can be updated to extend the experiment lifetime.",
 				Optional: true,
 				Computed: true,
+				Validators: []validator.String{
+					validateRFC3339(),
+				},
 			},
 			"extend_reason": schema.StringAttribute{
 				Description: "Reason provided when extending the experiment lifetime.",

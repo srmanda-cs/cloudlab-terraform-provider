@@ -11,6 +11,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 )
@@ -108,12 +109,18 @@ func (r *resgroupResource) Schema(_ context.Context, _ resource.SchemaRequest, r
 					"If omitted, the reservation starts immediately.",
 				Optional: true,
 				Computed: true,
+				Validators: []validator.String{
+					validateRFC3339(),
+				},
 			},
 			"expires_at": schema.StringAttribute{
 				Description: "The time the reservation expires (RFC3339 format). " +
 					"Mutually exclusive with duration.",
 				Optional: true,
 				Computed: true,
+				Validators: []validator.String{
+					validateRFC3339(),
+				},
 			},
 			"duration": schema.Int64Attribute{
 				Description: "Duration of the reservation in hours, as an alternative to expires_at.",
