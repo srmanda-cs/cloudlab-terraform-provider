@@ -7,6 +7,7 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -26,24 +27,40 @@ type resgroupResource struct {
 	client *Client
 }
 
-// resgroupNodeModel maps a node type entry in a reservation group.
-type resgroupNodeModel struct {
-	NodeType  types.String `tfsdk:"node_type"`
-	Aggregate types.String `tfsdk:"aggregate"`
-	Count     types.Int64  `tfsdk:"count"`
+// resgroupNodeTypeModel maps a node type reservation in a resgroup.
+type resgroupNodeTypeModel struct {
+	URN      types.String `tfsdk:"urn"`
+	NodeType types.String `tfsdk:"node_type"`
+	Count    types.Int64  `tfsdk:"count"`
+}
+
+// resgroupRangeModel maps a frequency range reservation in a resgroup.
+type resgroupRangeModel struct {
+	MinFreq types.Float64 `tfsdk:"min_freq"`
+	MaxFreq types.Float64 `tfsdk:"max_freq"`
+}
+
+// resgroupRouteModel maps a named route reservation in a resgroup.
+type resgroupRouteModel struct {
+	Name types.String `tfsdk:"name"`
 }
 
 // resgroupResourceModel maps the resource schema data.
 type resgroupResourceModel struct {
-	ID        types.String        `tfsdk:"id"`
-	Project   types.String        `tfsdk:"project"`
-	Reason    types.String        `tfsdk:"reason"`
-	StartAt   types.String        `tfsdk:"start_at"`
-	ExpiresAt types.String        `tfsdk:"expires_at"`
-	NodeTypes []resgroupNodeModel `tfsdk:"node_types"`
-	Creator   types.String        `tfsdk:"creator"`
-	Status    types.String        `tfsdk:"status"`
-	CreatedAt types.String        `tfsdk:"created_at"`
+	ID          types.String            `tfsdk:"id"`
+	Project     types.String            `tfsdk:"project"`
+	Group       types.String            `tfsdk:"group"`
+	Reason      types.String            `tfsdk:"reason"`
+	StartAt     types.String            `tfsdk:"start_at"`
+	ExpiresAt   types.String            `tfsdk:"expires_at"`
+	Duration    types.Int64             `tfsdk:"duration"`
+	PowderZones types.String            `tfsdk:"powder_zones"`
+	NodeTypes   []resgroupNodeTypeModel `tfsdk:"node_types"`
+	Ranges      []resgroupRangeModel    `tfsdk:"ranges"`
+	Routes      []resgroupRouteModel    `tfsdk:"routes"`
+	// Computed read-only fields
+	Creator   types.String `tfsdk:"creator"`
+	CreatedAt types.String `tfsdk:"created_at"`
 }
 
 // Metadata returns the resource type name.
@@ -72,6 +89,13 @@ func (r *resgroupResource) Schema(_ context.Context, _ resource.SchemaRequest, r
 					stringplanmodifier.RequiresReplace(),
 				},
 			},
+			"group": schema.StringAttribute{
+				Description: "The project subgroup for this reservation group.",
+				Optional:    true,
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.RequiresReplace(),
+				},
+			},
 			"reason": schema.StringAttribute{
 				Description: "A description of why you need to reserve these resources.",
 				Required:    true,
@@ -80,23 +104,36 @@ func (r *resgroupResource) Schema(_ context.Context, _ resource.SchemaRequest, r
 				Description: "The time the reservation should start (RFC3339 format). " +
 					"If omitted, the reservation starts immediately.",
 				Optional: true,
+				Computed: true,
 			},
 			"expires_at": schema.StringAttribute{
-				Description: "The time the reservation expires (RFC3339 format).",
+				Description: "The time the reservation expires (RFC3339 format). " +
+					"Mutually exclusive with duration.",
+				Optional: true,
+				Computed: true,
+			},
+			"duration": schema.Int64Attribute{
+				Description: "Duration of the reservation in hours, as an alternative to expires_at.",
 				Optional:    true,
-				Computed:    true,
+				PlanModifiers: []planmodifier.Int64{
+					int64planmodifier.UseStateForUnknown(),
+				},
+			},
+			"powder_zones": schema.StringAttribute{
+				Description: "Powder zone for radio reservations. One of: Outdoor, Indoor OTA Lab, Flux.",
+				Optional:    true,
 			},
 			"node_types": schema.ListNestedAttribute{
 				Description: "The list of node types and counts to reserve.",
 				Optional:    true,
 				NestedObject: schema.NestedAttributeObject{
 					Attributes: map[string]schema.Attribute{
-						"node_type": schema.StringAttribute{
-							Description: "The hardware node type to reserve (e.g., xl170, m400).",
+						"urn": schema.StringAttribute{
+							Description: "The aggregate URN for this reservation (e.g., urn:publicid:IDN+utah.cloudlab.us+authority+cm).",
 							Required:    true,
 						},
-						"aggregate": schema.StringAttribute{
-							Description: "The CloudLab site/aggregate (e.g., utah.cloudlab.us).",
+						"node_type": schema.StringAttribute{
+							Description: "The hardware node type to reserve (e.g., xl170, m400).",
 							Required:    true,
 						},
 						"count": schema.Int64Attribute{
@@ -106,16 +143,41 @@ func (r *resgroupResource) Schema(_ context.Context, _ resource.SchemaRequest, r
 					},
 				},
 			},
+			"ranges": schema.ListNestedAttribute{
+				Description: "Frequency range reservations (Powder/POWDER wireless testbed).",
+				Optional:    true,
+				NestedObject: schema.NestedAttributeObject{
+					Attributes: map[string]schema.Attribute{
+						"min_freq": schema.Float64Attribute{
+							Description: "The start of the frequency range (inclusive) in MHz.",
+							Required:    true,
+						},
+						"max_freq": schema.Float64Attribute{
+							Description: "The end of the frequency range (inclusive) in MHz.",
+							Required:    true,
+						},
+					},
+				},
+			},
+			"routes": schema.ListNestedAttribute{
+				Description: "Named route reservations.",
+				Optional:    true,
+				NestedObject: schema.NestedAttributeObject{
+					Attributes: map[string]schema.Attribute{
+						"name": schema.StringAttribute{
+							Description: "The route name to reserve.",
+							Required:    true,
+						},
+					},
+				},
+			},
+			// Computed read-only attributes
 			"creator": schema.StringAttribute{
 				Description: "The CloudLab username who created the reservation group.",
 				Computed:    true,
 				PlanModifiers: []planmodifier.String{
 					stringplanmodifier.UseStateForUnknown(),
 				},
-			},
-			"status": schema.StringAttribute{
-				Description: "The current status of the reservation group.",
-				Computed:    true,
 			},
 			"created_at": schema.StringAttribute{
 				Description: "The timestamp when the reservation group was created.",
@@ -146,6 +208,65 @@ func (r *resgroupResource) Configure(_ context.Context, req resource.ConfigureRe
 	r.client = client
 }
 
+// buildResgroupCreateRequest builds a ResgroupCreateRequest from a model.
+func buildResgroupCreateRequest(plan resgroupResourceModel) *ResgroupCreateRequest {
+	createReq := &ResgroupCreateRequest{
+		Project: plan.Project.ValueString(),
+		Reason:  plan.Reason.ValueString(),
+	}
+
+	if !plan.Group.IsNull() && !plan.Group.IsUnknown() {
+		createReq.Group = plan.Group.ValueString()
+	}
+	if !plan.StartAt.IsNull() && !plan.StartAt.IsUnknown() {
+		v := plan.StartAt.ValueString()
+		createReq.StartAt = &v
+	}
+	if !plan.ExpiresAt.IsNull() && !plan.ExpiresAt.IsUnknown() {
+		v := plan.ExpiresAt.ValueString()
+		createReq.ExpiresAt = &v
+	}
+	if !plan.PowderZones.IsNull() && !plan.PowderZones.IsUnknown() {
+		v := plan.PowderZones.ValueString()
+		createReq.PowderZones = &v
+	}
+
+	if len(plan.NodeTypes) > 0 {
+		nodeTypes := &ResgroupNodeTypes{}
+		for _, n := range plan.NodeTypes {
+			nodeTypes.NodeTypes = append(nodeTypes.NodeTypes, ResgroupNodeType{
+				URN:      n.URN.ValueString(),
+				NodeType: n.NodeType.ValueString(),
+				Count:    n.Count.ValueInt64(),
+			})
+		}
+		createReq.NodeTypes = nodeTypes
+	}
+
+	if len(plan.Ranges) > 0 {
+		ranges := &ResgroupRanges{}
+		for _, rng := range plan.Ranges {
+			ranges.Ranges = append(ranges.Ranges, ResgroupRange{
+				MinFreq: rng.MinFreq.ValueFloat64(),
+				MaxFreq: rng.MaxFreq.ValueFloat64(),
+			})
+		}
+		createReq.Ranges = ranges
+	}
+
+	if len(plan.Routes) > 0 {
+		routes := &ResgroupRoutes{}
+		for _, rt := range plan.Routes {
+			routes.Routes = append(routes.Routes, ResgroupRoute{
+				Name: rt.Name.ValueString(),
+			})
+		}
+		createReq.Routes = routes
+	}
+
+	return createReq
+}
+
 // Create creates the reservation group and sets the initial Terraform state.
 func (r *resgroupResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
 	var plan resgroupResourceModel
@@ -155,33 +276,19 @@ func (r *resgroupResource) Create(ctx context.Context, req resource.CreateReques
 		return
 	}
 
-	createReq := &ResgroupCreateRequest{
-		Project: plan.Project.ValueString(),
-		Reason:  plan.Reason.ValueString(),
-	}
+	createReq := buildResgroupCreateRequest(plan)
 
-	if !plan.StartAt.IsNull() && !plan.StartAt.IsUnknown() {
-		v := plan.StartAt.ValueString()
-		createReq.StartAt = &v
-	}
-	if !plan.ExpiresAt.IsNull() && !plan.ExpiresAt.IsUnknown() {
-		v := plan.ExpiresAt.ValueString()
-		createReq.ExpiresAt = &v
-	}
-
-	for _, n := range plan.NodeTypes {
-		createReq.NodeTypes = append(createReq.NodeTypes, ResgroupNode{
-			NodeType:  n.NodeType.ValueString(),
-			Aggregate: n.Aggregate.ValueString(),
-			Count:     n.Count.ValueInt64(),
-		})
+	var durationHours *int64
+	if !plan.Duration.IsNull() && !plan.Duration.IsUnknown() {
+		v := plan.Duration.ValueInt64()
+		durationHours = &v
 	}
 
 	tflog.Info(ctx, "Creating CloudLab reservation group", map[string]any{
 		"project": createReq.Project,
 	})
 
-	rg, err := r.client.CreateResgroup(createReq)
+	rg, err := r.client.CreateResgroup(createReq, durationHours)
 	if err != nil {
 		resp.Diagnostics.AddError("Error Creating Reservation Group", err.Error())
 		return
@@ -219,12 +326,37 @@ func (r *resgroupResource) Read(ctx context.Context, req resource.ReadRequest, r
 	resp.Diagnostics.Append(diags...)
 }
 
-// Update updates mutable reservation group attributes.
-func (r *resgroupResource) Update(_ context.Context, _ resource.UpdateRequest, resp *resource.UpdateResponse) {
-	resp.Diagnostics.AddError(
-		"Update Not Supported",
-		"CloudLab reservation groups cannot be updated in-place. Please delete and recreate the reservation group.",
-	)
+// Update modifies mutable resgroup attributes via PUT.
+func (r *resgroupResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
+	var plan, state resgroupResourceModel
+
+	diags := req.Plan.Get(ctx, &plan)
+	resp.Diagnostics.Append(diags...)
+	diags = req.State.Get(ctx, &state)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	resgroupID := state.ID.ValueString()
+	modReq := buildResgroupCreateRequest(plan)
+
+	var durationHours *int64
+	if !plan.Duration.IsNull() && !plan.Duration.IsUnknown() {
+		v := plan.Duration.ValueInt64()
+		durationHours = &v
+	}
+
+	tflog.Info(ctx, "Modifying CloudLab reservation group", map[string]any{"id": resgroupID})
+	rg, err := r.client.ModifyResgroup(resgroupID, modReq, durationHours)
+	if err != nil {
+		resp.Diagnostics.AddError("Error Modifying Reservation Group", err.Error())
+		return
+	}
+
+	plan = mapResgroupResponseToModel(rg, plan)
+	diags = resp.State.Set(ctx, plan)
+	resp.Diagnostics.Append(diags...)
 }
 
 // Delete deletes the reservation group.
@@ -254,8 +386,18 @@ func mapResgroupResponseToModel(rg *ResgroupResponse, model resgroupResourceMode
 	model.Project = types.StringValue(rg.Project)
 	model.Reason = types.StringValue(rg.Reason)
 	model.Creator = types.StringValue(rg.Creator)
-	model.Status = types.StringValue(rg.Status)
-	model.CreatedAt = types.StringValue(rg.CreatedAt)
+
+	if rg.Group != "" {
+		model.Group = types.StringValue(rg.Group)
+	} else if model.Group.IsUnknown() {
+		model.Group = types.StringNull()
+	}
+
+	if rg.CreatedAt != nil {
+		model.CreatedAt = types.StringValue(*rg.CreatedAt)
+	} else {
+		model.CreatedAt = types.StringNull()
+	}
 
 	if rg.StartAt != nil {
 		model.StartAt = types.StringValue(*rg.StartAt)
@@ -267,6 +409,48 @@ func mapResgroupResponseToModel(rg *ResgroupResponse, model resgroupResourceMode
 		model.ExpiresAt = types.StringValue(*rg.ExpiresAt)
 	} else {
 		model.ExpiresAt = types.StringNull()
+	}
+
+	if rg.PowderZones != nil {
+		model.PowderZones = types.StringValue(*rg.PowderZones)
+	} else if model.PowderZones.IsUnknown() {
+		model.PowderZones = types.StringNull()
+	}
+
+	// Map node types from response
+	if rg.NodeTypes != nil && len(rg.NodeTypes.NodeTypes) > 0 {
+		var nodeTypeModels []resgroupNodeTypeModel
+		for _, nt := range rg.NodeTypes.NodeTypes {
+			nodeTypeModels = append(nodeTypeModels, resgroupNodeTypeModel{
+				URN:      types.StringValue(nt.URN),
+				NodeType: types.StringValue(nt.NodeType),
+				Count:    types.Int64Value(nt.Count),
+			})
+		}
+		model.NodeTypes = nodeTypeModels
+	}
+
+	// Map ranges from response
+	if rg.Ranges != nil && len(rg.Ranges.Ranges) > 0 {
+		var rangeModels []resgroupRangeModel
+		for _, rng := range rg.Ranges.Ranges {
+			rangeModels = append(rangeModels, resgroupRangeModel{
+				MinFreq: types.Float64Value(rng.MinFreq),
+				MaxFreq: types.Float64Value(rng.MaxFreq),
+			})
+		}
+		model.Ranges = rangeModels
+	}
+
+	// Map routes from response
+	if rg.Routes != nil && len(rg.Routes.Routes) > 0 {
+		var routeModels []resgroupRouteModel
+		for _, rt := range rg.Routes.Routes {
+			routeModels = append(routeModels, resgroupRouteModel{
+				Name: types.StringValue(rt.Name),
+			})
+		}
+		model.Routes = routeModels
 	}
 
 	return model
