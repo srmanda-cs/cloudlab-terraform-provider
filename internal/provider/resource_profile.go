@@ -36,10 +36,14 @@ type profileResourceModel struct {
 	RepositoryURL   types.String `tfsdk:"repository_url"`
 	Public          types.Bool   `tfsdk:"public"`
 	ProjectWritable types.Bool   `tfsdk:"project_writable"`
-	Creator         types.String `tfsdk:"creator"`
-	Version         types.Int64  `tfsdk:"version"`
-	CreatedAt       types.String `tfsdk:"created_at"`
-	UpdatedAt       types.String `tfsdk:"updated_at"`
+	// Computed read-only fields
+	Creator           types.String `tfsdk:"creator"`
+	Version           types.Int64  `tfsdk:"version"`
+	CreatedAt         types.String `tfsdk:"created_at"`
+	UpdatedAt         types.String `tfsdk:"updated_at"`
+	RepositoryRefspec types.String `tfsdk:"repository_refspec"`
+	RepositoryHash    types.String `tfsdk:"repository_hash"`
+	RepositoryGithook types.String `tfsdk:"repository_githook"`
 }
 
 // Metadata returns the resource type name.
@@ -77,11 +81,8 @@ func (r *profileResource) Schema(_ context.Context, _ resource.SchemaRequest, re
 			},
 			"script": schema.StringAttribute{
 				Description: "A geni-lib Python script that defines the experiment topology. " +
-					"Mutually exclusive with repository_url.",
+					"Mutually exclusive with repository_url. Can be updated in-place.",
 				Optional: true,
-				PlanModifiers: []planmodifier.String{
-					stringplanmodifier.RequiresReplace(),
-				},
 			},
 			"repository_url": schema.StringAttribute{
 				Description: "URL of a git repository containing the profile. " +
@@ -103,6 +104,7 @@ func (r *profileResource) Schema(_ context.Context, _ resource.SchemaRequest, re
 				Computed:    true,
 				Default:     booldefault.StaticBool(false),
 			},
+			// Computed read-only attributes
 			"creator": schema.StringAttribute{
 				Description: "The CloudLab username who created the profile.",
 				Computed:    true,
@@ -123,6 +125,18 @@ func (r *profileResource) Schema(_ context.Context, _ resource.SchemaRequest, re
 			},
 			"updated_at": schema.StringAttribute{
 				Description: "The timestamp when the profile was last updated.",
+				Computed:    true,
+			},
+			"repository_refspec": schema.StringAttribute{
+				Description: "The refspec of the profile (for repository-backed profiles).",
+				Computed:    true,
+			},
+			"repository_hash": schema.StringAttribute{
+				Description: "The commit hash of the profile (for repository-backed profiles).",
+				Computed:    true,
+			},
+			"repository_githook": schema.StringAttribute{
+				Description: "The Portal URL of the repository githook (for repository-backed profiles).",
 				Computed:    true,
 			},
 		},
@@ -213,14 +227,63 @@ func (r *profileResource) Read(ctx context.Context, req resource.ReadRequest, re
 	resp.Diagnostics.Append(diags...)
 }
 
-// Update updates mutable profile attributes (public, project_writable).
+// Update modifies mutable profile attributes: script, public, project_writable.
+// For repository-backed profiles, it also triggers a repo update if repository_url hasn't changed.
 func (r *profileResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
-	// All mutable fields are handled by RequiresReplace, so Update is not needed.
-	// This method exists to satisfy the interface.
-	resp.Diagnostics.AddError(
-		"Update Not Supported",
-		"CloudLab profile attributes that changed require replacing the profile.",
-	)
+	var plan, state profileResourceModel
+
+	diags := req.Plan.Get(ctx, &plan)
+	resp.Diagnostics.Append(diags...)
+	diags = req.State.Get(ctx, &state)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	profileID := state.ID.ValueString()
+	var profile *ProfileResponse
+	var err error
+
+	// Check if any PATCH-able fields changed (script, public, project_writable)
+	scriptChanged := !plan.Script.Equal(state.Script)
+	publicChanged := !plan.Public.Equal(state.Public)
+	projectWritableChanged := !plan.ProjectWritable.Equal(state.ProjectWritable)
+
+	if scriptChanged || publicChanged || projectWritableChanged {
+		modReq := &ProfileModifyRequest{}
+		if scriptChanged && !plan.Script.IsNull() && !plan.Script.IsUnknown() {
+			v := plan.Script.ValueString()
+			modReq.Script = &v
+		}
+		if publicChanged {
+			v := plan.Public.ValueBool()
+			modReq.Public = &v
+		}
+		if projectWritableChanged {
+			v := plan.ProjectWritable.ValueBool()
+			modReq.ProjectWritable = &v
+		}
+
+		tflog.Info(ctx, "Modifying CloudLab profile", map[string]any{"id": profileID})
+		profile, err = r.client.ModifyProfile(profileID, modReq)
+		if err != nil {
+			resp.Diagnostics.AddError("Error Modifying Profile", err.Error())
+			return
+		}
+	}
+
+	// If no changes needed a PATCH call, refresh state
+	if profile == nil {
+		profile, err = r.client.GetProfile(profileID)
+		if err != nil {
+			resp.Diagnostics.AddError("Error Reading Profile", err.Error())
+			return
+		}
+	}
+
+	plan = mapProfileResponseToModel(profile, plan)
+	diags = resp.State.Set(ctx, plan)
+	resp.Diagnostics.Append(diags...)
 }
 
 // Delete deletes the profile.
@@ -265,6 +328,31 @@ func mapProfileResponseToModel(profile *ProfileResponse, model profileResourceMo
 		model.RepositoryURL = types.StringValue(*profile.RepositoryURL)
 	} else if model.RepositoryURL.IsUnknown() {
 		model.RepositoryURL = types.StringNull()
+	}
+
+	if profile.RepositoryRefspec != nil {
+		model.RepositoryRefspec = types.StringValue(*profile.RepositoryRefspec)
+	} else {
+		model.RepositoryRefspec = types.StringNull()
+	}
+
+	if profile.RepositoryHash != nil {
+		model.RepositoryHash = types.StringValue(*profile.RepositoryHash)
+	} else {
+		model.RepositoryHash = types.StringNull()
+	}
+
+	if profile.RepositoryGithook != nil {
+		model.RepositoryGithook = types.StringValue(*profile.RepositoryGithook)
+	} else {
+		model.RepositoryGithook = types.StringNull()
+	}
+
+	// Populate script from current_version if available and not already set by user
+	if profile.CurrentVersion != nil && profile.CurrentVersion.Script != nil {
+		if model.Script.IsNull() || model.Script.IsUnknown() {
+			model.Script = types.StringValue(*profile.CurrentVersion.Script)
+		}
 	}
 
 	return model
