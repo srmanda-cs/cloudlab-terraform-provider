@@ -2,7 +2,9 @@ package provider
 
 import (
 	"context"
+	"encoding/xml"
 	"fmt"
+	"strings"
 
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
@@ -48,6 +50,84 @@ type manifestDataSourceModel struct {
 	Manifests    []manifestEntryModel `tfsdk:"manifests"`
 }
 
+// ---------------------------------------------------------------------------
+// RSpec XML parsing types
+// ---------------------------------------------------------------------------
+
+// rspecXML is the top-level RSpec XML structure.
+type rspecXML struct {
+	XMLName xml.Name    `xml:"rspec"`
+	Nodes   []rspecNode `xml:"node"`
+}
+
+// rspecNode represents a node element in an RSpec.
+type rspecNode struct {
+	ClientID   string       `xml:"client_id,attr"`
+	Host       rspecHost    `xml:"host"`
+	Interfaces []rspecIface `xml:"interface"`
+}
+
+// rspecHost represents the <host> element with hostname and IPv4.
+type rspecHost struct {
+	Name string `xml:"name,attr"`
+	IPv4 string `xml:"ipv4,attr"`
+}
+
+// rspecIface represents a network interface in an RSpec node.
+type rspecIface struct {
+	ClientID string    `xml:"client_id,attr"`
+	IPs      []rspecIP `xml:"ip"`
+}
+
+// rspecIP represents an IP address on an interface.
+type rspecIP struct {
+	Address string `xml:"address,attr"`
+	Type    string `xml:"type,attr"`
+}
+
+// parseRSpecNodes parses node information from a raw RSpec XML string.
+func parseRSpecNodes(rspecXMLStr string) []manifestNodeModel {
+	var rspec rspecXML
+	if err := xml.NewDecoder(strings.NewReader(rspecXMLStr)).Decode(&rspec); err != nil {
+		return nil
+	}
+
+	var nodes []manifestNodeModel
+	for _, n := range rspec.Nodes {
+		node := manifestNodeModel{
+			ClientID: types.StringValue(n.ClientID),
+			Hostname: types.StringValue(n.Host.Name),
+		}
+
+		// Add the host IPv4 as the primary interface if present
+		if n.Host.IPv4 != "" {
+			node.Interfaces = append(node.Interfaces, manifestNodeInterfaceModel{
+				Name:    types.StringValue("eth0"),
+				Address: types.StringValue(n.Host.IPv4),
+			})
+		}
+
+		// Add any additional interface IPs
+		for _, iface := range n.Interfaces {
+			for _, ip := range iface.IPs {
+				if ip.Type == "ipv4" || ip.Type == "" {
+					name := iface.ClientID
+					if name == "" {
+						name = "iface"
+					}
+					node.Interfaces = append(node.Interfaces, manifestNodeInterfaceModel{
+						Name:    types.StringValue(name),
+						Address: types.StringValue(ip.Address),
+					})
+				}
+			}
+		}
+
+		nodes = append(nodes, node)
+	}
+	return nodes
+}
+
 // Metadata returns the data source type name.
 func (d *manifestDataSource) Metadata(_ context.Context, req datasource.MetadataRequest, resp *datasource.MetadataResponse) {
 	resp.TypeName = req.ProviderTypeName + "_manifest"
@@ -70,7 +150,7 @@ func (d *manifestDataSource) Schema(_ context.Context, _ datasource.SchemaReques
 				NestedObject: schema.NestedAttributeObject{
 					Attributes: map[string]schema.Attribute{
 						"aggregate": schema.StringAttribute{
-							Description: "The CloudLab aggregate (site) this manifest applies to.",
+							Description: "The CloudLab aggregate (site) URN this manifest applies to.",
 							Computed:    true,
 						},
 						"nodes": schema.ListNestedAttribute{
@@ -92,7 +172,7 @@ func (d *manifestDataSource) Schema(_ context.Context, _ datasource.SchemaReques
 										NestedObject: schema.NestedAttributeObject{
 											Attributes: map[string]schema.Attribute{
 												"name": schema.StringAttribute{
-													Description: "The interface name (e.g., eth0).",
+													Description: "The interface name.",
 													Computed:    true,
 												},
 												"address": schema.StringAttribute{
@@ -143,34 +223,18 @@ func (d *manifestDataSource) Read(ctx context.Context, req datasource.ReadReques
 		"experiment_id": state.ExperimentID.ValueString(),
 	})
 
-	manifests, err := d.client.GetManifests(state.ExperimentID.ValueString())
+	rawManifests, err := d.client.GetRawManifests(state.ExperimentID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Error Reading Experiment Manifests", err.Error())
 		return
 	}
 
 	var manifestModels []manifestEntryModel
-	for _, m := range manifests {
+	for urn, rspecXMLStr := range rawManifests {
 		entry := manifestEntryModel{
-			Aggregate: types.StringValue(m.Aggregate),
+			Aggregate: types.StringValue(urn),
+			Nodes:     parseRSpecNodes(rspecXMLStr),
 		}
-
-		for _, n := range m.Nodes {
-			node := manifestNodeModel{
-				ClientID: types.StringValue(n.ClientID),
-				Hostname: types.StringValue(n.Hostname),
-			}
-
-			for _, iface := range n.Interfaces {
-				node.Interfaces = append(node.Interfaces, manifestNodeInterfaceModel{
-					Name:    types.StringValue(iface.Name),
-					Address: types.StringValue(iface.Address),
-				})
-			}
-
-			entry.Nodes = append(entry.Nodes, node)
-		}
-
 		manifestModels = append(manifestModels, entry)
 	}
 

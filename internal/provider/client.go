@@ -522,6 +522,8 @@ func (c *Client) WaitForExperiment(ctx context.Context, experimentID string) (*E
 }
 
 // GetManifests retrieves the manifests for a running experiment.
+//
+// Deprecated: Use GetRawManifests for the correct XML-based response format.
 func (c *Client) GetManifests(experimentID string) ([]ManifestEntry, error) {
 	body, err := c.doRequest(http.MethodGet, "/experiments/"+experimentID+"/manifests", nil)
 	if err != nil {
@@ -532,6 +534,21 @@ func (c *Client) GetManifests(experimentID string) ([]ManifestEntry, error) {
 		return nil, fmt.Errorf("failed to parse manifest response: %w", err)
 	}
 	return list.Manifests, nil
+}
+
+// GetRawManifests retrieves the manifests for a running experiment as a map of
+// aggregate URN -> RSpec XML string. The CloudLab API returns RSpec XML documents,
+// not the structured JSON format.
+func (c *Client) GetRawManifests(experimentID string) (map[string]string, error) {
+	body, err := c.doRequest(http.MethodGet, "/experiments/"+experimentID+"/manifests", nil)
+	if err != nil {
+		return nil, err
+	}
+	var result map[string]string
+	if err := json.Unmarshal(body, &result); err != nil {
+		return nil, fmt.Errorf("failed to parse manifest response: %w", err)
+	}
+	return result, nil
 }
 
 // GetExperimentNode retrieves info about a specific node in an experiment.
