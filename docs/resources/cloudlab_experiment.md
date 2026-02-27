@@ -10,7 +10,7 @@ Manages a CloudLab experiment. In CloudLab terminology, an "experiment" is a run
 
 Creating this resource calls `POST /experiments` and (by default) waits up to 30 minutes for the experiment to reach `ready` status. Deleting the resource terminates the experiment and releases all associated hardware.
 
-**Mutable without replacement:** `expires_at` (extend lifetime), `extend_reason`, and `bindings`. All other configuration attributes require destroying and recreating the experiment.
+**Mutable without replacement:** `expires_at` (absolute expiry), `extend_by` (relative hours), `extend_reason`, and `bindings`. All other configuration attributes require destroying and recreating the experiment.
 
 ## Example Usage
 
@@ -73,7 +73,7 @@ resource "cloudlab_experiment" "scheduled" {
 }
 ```
 
-### Extending an experiment's lifetime
+### Extending an experiment's lifetime (absolute timestamp)
 
 ```terraform
 resource "cloudlab_experiment" "cluster" {
@@ -84,6 +84,21 @@ resource "cloudlab_experiment" "cluster" {
   duration        = 24
   expires_at      = "2026-04-01T00:00:00Z"
   extend_reason   = "Need more time for data collection"
+}
+```
+
+### Extending an experiment's lifetime (relative hours)
+
+```terraform
+resource "cloudlab_experiment" "cluster" {
+  name            = "my-cluster"
+  project         = "MyProject"
+  profile_name    = "small-lan"
+  profile_project = "CloudLab"
+  duration        = 24
+  # Adds 24 h to the current expiration. Change to 48 in a later apply to add another 24 h.
+  extend_by     = 24
+  extend_reason = "Need more time for benchmarking"
 }
 ```
 
@@ -153,8 +168,9 @@ output "node1_ipv4" {
 - `bindings` (String) — JSON-encoded parameter bindings to apply to the profile (must be a valid JSON object, e.g. `jsonencode({n_nodes = 4})`). Validated at plan time. Mutable: changing this value performs a `PATCH /experiments/{id}` to apply new bindings to the running experiment.
 - `refspec` (String) — For repository-backed profiles, optionally specify a `refspec[:hash]` to use instead of the HEAD of the default branch. **Forces new resource.**
 - `sshpubkey` (String) — An additional SSH public key to install on all nodes in the experiment. **Forces new resource.**
-- `expires_at` (String) — The time the experiment should expire (RFC3339 format). Validated at plan time. Setting or changing this value performs a `PUT /experiments/{id}` to extend (or set) the expiration. Can only be moved later, not earlier, once the experiment is running.
-- `extend_reason` (String) — Optional reason text to include when extending the experiment's lifetime via `expires_at`.
+- `expires_at` (String) — The time the experiment should expire (RFC3339 format). Validated at plan time. Setting or changing this value performs a `PUT /experiments/{id}` to set an absolute expiry. Mutually exclusive in intent with `extend_by` — use one or the other per apply.
+- `extend_by` (Number) — Number of hours to add to the experiment's current expiration. Changing this value performs a `PUT /experiments/{id}` with `extend_by`. To extend by additional hours in a later apply, increment the value (e.g. `24` → `48` means "48 h total added in this config"). Mutually exclusive in intent with `expires_at`.
+- `extend_reason` (String) — Optional reason text to include when extending the experiment's lifetime via `expires_at` or `extend_by`.
 - `wait_for_ready` (Boolean) — If `true` (default), Terraform blocks until the experiment reaches `ready` status before completing the `apply`. Set to `false` to return immediately after the create request is submitted. The provider polls every 15 seconds with a 30-minute timeout.
 
 ### Read-Only

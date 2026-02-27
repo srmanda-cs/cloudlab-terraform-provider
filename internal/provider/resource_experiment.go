@@ -52,6 +52,7 @@ type experimentResourceModel struct {
 	WaitForReady   types.Bool   `tfsdk:"wait_for_ready"`
 	// Extension fields (mutable via Update)
 	ExpiresAt    types.String `tfsdk:"expires_at"`
+	ExtendBy     types.Int64  `tfsdk:"extend_by"`
 	ExtendReason types.String `tfsdk:"extend_reason"`
 	// Computed read-only fields
 	Creator           types.String `tfsdk:"creator"`
@@ -193,16 +194,25 @@ func (r *experimentResource) Schema(_ context.Context, _ resource.SchemaRequest,
 			},
 			// Mutable extension attributes
 			"expires_at": schema.StringAttribute{
-				Description: "The timestamp when the experiment is scheduled to expire. " +
-					"Can be updated to extend the experiment lifetime.",
+				Description: "The timestamp when the experiment is scheduled to expire (RFC3339 format). " +
+					"Setting or updating this performs a PUT /experiments/{id} to set an absolute expiry. " +
+					"Mutually exclusive in intent with extend_by — use one or the other per apply.",
 				Optional: true,
 				Computed: true,
 				Validators: []validator.String{
 					validateRFC3339(),
 				},
 			},
+			"extend_by": schema.Int64Attribute{
+				Description: "Number of hours to add to the experiment's current expiration. " +
+					"Changing this value performs a PUT /experiments/{id} with extend_by set to the new value. " +
+					"To extend by additional hours in a subsequent apply, increment this value " +
+					"(e.g. 24 → 48 means \"I have extended by 48 h total in this config\"). " +
+					"Mutually exclusive in intent with expires_at — use one or the other per apply.",
+				Optional: true,
+			},
 			"extend_reason": schema.StringAttribute{
-				Description: "Reason provided when extending the experiment lifetime.",
+				Description: "Reason provided when extending the experiment lifetime (via expires_at or extend_by).",
 				Optional:    true,
 			},
 			// Computed read-only attributes
@@ -409,12 +419,19 @@ func (r *experimentResource) Update(ctx context.Context, req resource.UpdateRequ
 	var exp *ExperimentResponse
 	var err error
 
-	// Handle extension (expires_at changed)
-	if !plan.ExpiresAt.Equal(state.ExpiresAt) {
+	// Handle extension (expires_at or extend_by changed)
+	expiresAtChanged := !plan.ExpiresAt.Equal(state.ExpiresAt)
+	extendByChanged := !plan.ExtendBy.Equal(state.ExtendBy)
+
+	if expiresAtChanged || extendByChanged {
 		extReq := &ExperimentExtendRequest{}
 		if !plan.ExpiresAt.IsNull() && !plan.ExpiresAt.IsUnknown() {
 			v := plan.ExpiresAt.ValueString()
 			extReq.ExpiresAt = &v
+		}
+		if !plan.ExtendBy.IsNull() && !plan.ExtendBy.IsUnknown() {
+			v := plan.ExtendBy.ValueInt64()
+			extReq.ExtendBy = &v
 		}
 		if !plan.ExtendReason.IsNull() && !plan.ExtendReason.IsUnknown() {
 			v := plan.ExtendReason.ValueString()
